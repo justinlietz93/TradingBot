@@ -1,2 +1,37 @@
-/trading_env
-/logs
+# Virtual environment
+/trading_env/
+/venv/
+
+# Log files
+/logs/
+
+# Compiled Python files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Data files
+*.csv
+*.pkl
+*.h5
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS files
+.DS_Store
+
+# Sensitive information
+config/secrets.py

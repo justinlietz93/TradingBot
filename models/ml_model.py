@@ -9,15 +9,6 @@ import numpy as np
 import logging
 from .base_model import BaseModel
 
-# Configure logging
-logging.basicConfig(
-    filename='trading_bot.log',
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger(__name__)
-
 class MLModel(BaseModel):
     def __init__(self, config: 'Config'):
         try:
