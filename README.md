@@ -1,6 +1,7 @@
 # Project README
 
 This repository contains code, logs, and various configuration files for a TensorFlow-based trading bot. Below is a high-level overview of each file and directory, along with usage instructions.
+For further insight and instruction, check out the documentation folder.
 
 ---
 
