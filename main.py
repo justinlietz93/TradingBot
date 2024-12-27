@@ -17,6 +17,7 @@ from data.data_splitter import split_data
 import traceback
 warnings.filterwarnings('ignore')  # Suppress warnings for cleaner output
 
+
 def setup_logging():
     """Set up logging configuration with both console and file output."""
     # Create logs directory if it doesn't exist
@@ -106,11 +107,47 @@ def plot_trading_results(data: pd.DataFrame, trades: list, save_path: str = None
     plt.close()
 
 def run_backtest(strategy, data: pd.DataFrame, predictions: np.ndarray = None) -> tuple:
-    """Run backtest for a strategy and return results."""
-    signals = strategy.generate_signals(data, predictions)
-    trades = strategy.execute_trades(signals, data)
-    metrics = strategy.calculate_metrics(trades, data['close'].iloc[-1])
-    return trades, metrics
+    """
+    Run backtest for a strategy and return results.
+    
+    Args:
+        strategy: The trading strategy to backtest.
+        data (pd.DataFrame): Historical market data.
+        predictions (np.ndarray, optional): Predictions for the target variable.
+    
+    Returns:
+        tuple: (trades, metrics) where trades is a list of executed trades,
+               and metrics is a dictionary of performance metrics.
+    """
+    # Validate that data is a Pandas DataFrame
+    if not isinstance(data, pd.DataFrame):
+        logger.error(f"Expected Pandas DataFrame for `data`, but got {type(data)}")
+        raise ValueError("The `data` argument must be a Pandas DataFrame")
+
+    # Check if 'close' column is present in data
+    if 'close' not in data.columns:
+        logger.error("'close' column is missing in backtest data.")
+
+
+    try:
+        # Generate trading signals
+        logger.info("Generating trading signals...")
+        signals = strategy.generate_signals(data, predictions)
+
+        # Execute trades
+        logger.info("Executing trades...")
+        trades = strategy.execute_trades(signals, data)
+
+        # Calculate performance metrics
+        logger.info("Calculating performance metrics...")
+        metrics = strategy.calculate_metrics(trades, data['close'].iloc[-1])
+
+        logger.info("Backtest completed successfully.")
+        return trades, metrics
+
+    except Exception as e:
+        logger.error(f"Error during backtest: {e}")
+        raise
 
 def plot_portfolio_performance(data: pd.DataFrame, trades: list, metrics: dict, save_path: str = None):
     """Plot detailed portfolio performance analysis."""
@@ -220,11 +257,11 @@ def signal_handler(signum, frame):
 def main():
     # Set up signal handler
     signal.signal(signal.SIGINT, signal_handler)
-    
-    # Set up logging
+    # Initialize logging
+    global logger
     logger = setup_logging()
     logger.info("=== Trading Bot Simulation Started ===")
-    
+
     try:
         # Initialize and validate configuration
         config = Config.get_default_config()
@@ -300,7 +337,36 @@ def main():
                     # Generate predictions
                     logger.info(f"X_test shape before predict: {X_test.shape}")
                     predictions = ml_model.predict(X_test)
-                    
+
+                    # Flatten X_test if it's 3D
+                    if len(X_test.shape) == 3:
+                        logger.error("X_test is 3D. Flattening for processing...")
+                        X_test = X_test.reshape(X_test.shape[0], -1)  # Flatten 3D array to 2D
+                        logger.info(f"Flattened X_test shape: {X_test.shape}")
+
+                    # Check if X_test is already a DataFrame; convert if not
+                    if not isinstance(X_test, pd.DataFrame):
+                        logger.error("X_test is not a DataFrame. Converting...")
+                        logger.debug(f"X_test shape before reshaping: {X_test.shape}")
+                        
+                        # Handle X_test conversion with appropriate column naming
+                        if len(X_test.shape) == 2:  # Ensure it's now 2D
+                            X_test = pd.DataFrame(
+                                X_test, columns=[f"feature_{i}" for i in range(X_test.shape[1])]
+                            )
+                            # Add 'close' column from the original test data, if available
+                            if 'close' in test_data[ticker]:  # Ensure 'close' exists
+                                X_test['close'] = test_data[ticker]['close'][:len(X_test)].values
+                            else:
+                                logger.error("'close' column missing in test data. Ensure it is added.")
+                        else:
+                            logger.error(f"Unexpected shape for X_test: {X_test.shape}")
+                            raise ValueError(f"Cannot process X_test with shape {X_test.shape}")
+
+                    # Debugging: Print X_test columns
+                    logger.debug(f"X_test columns before backtest: {X_test.columns if isinstance(X_test, pd.DataFrame) else 'Not a DataFrame'}")
+
+
                     # Run ML strategy backtest
                     ml_strategy = MLTradingStrategy(config, ml_model)
                     ml_results = run_backtest(ml_strategy, X_test, predictions)
