@@ -205,6 +205,7 @@ def plot_trade_distribution(trades: list, ax):
             profit = trade.get('proceeds', 0) - trade.get('cost', 0)
             profits.append(profit)
     
+    # Plot the histogram
     if profits:
         sns.histplot(profits, bins=20, ax=ax)
         ax.axvline(x=0, color='r', linestyle='--')
@@ -245,20 +246,48 @@ def main():
         
         # Split data into train and test sets for each ticker
         train_data, test_data = split_data(data)
+
+        # Validate train_data and test_data
+        for ticker, data in train_data.items():
+            if 'X' not in data or 'y' not in data:
+                logger.error(f"Missing 'X' or 'y' in train_data for {ticker}")
+                continue
+            if not isinstance(data['X'], np.ndarray) or not hasattr(data['X'], 'shape'):
+                logger.error(f"Invalid 'X' for {ticker} in train_data: {type(data['X'])}")
+                continue
+            if not isinstance(data['y'], (np.ndarray, pd.Series, list)):
+                logger.error(f"Invalid 'y' for {ticker} in train_data: {type(data['y'])}")
+                continue
+            logger.debug(f"Valid train_data for {ticker}: X shape = {data['X'].shape}, y shape = {data['y'].shape}")
+
+        for ticker, data in test_data.items():
+            if 'X' not in data or 'y' not in data:
+                logger.error(f"Missing 'X' or 'y' in test_data for {ticker}")
+                continue
+            if not isinstance(data['X'], np.ndarray) or not hasattr(data['X'], 'shape'):
+                logger.error(f"Invalid 'X' for {ticker} in test_data: {type(data['X'])}")
+                continue
+            if not isinstance(data['y'], (np.ndarray, pd.Series, list)):
+                logger.error(f"Invalid 'y' for {ticker} in test_data: {type(data['y'])}")
+                continue
+            logger.debug(f"Valid test_data for {ticker}: X shape = {data['X'].shape}, y shape = {data['y'].shape}")
         
         # Train models and run backtesting for each ticker
         if 'tickers' in config.data:
             for ticker in config.data['tickers']:
                 logger.info(f"Processing {ticker}...")
-                
                 if ticker not in train_data:
                     logger.warning(f"Skipping {ticker} due to missing train data.")
                     continue
                 
                 try:
-                    X_train, y_train = train_data[ticker]
-                    X_test, y_test = test_data[ticker]
-                    
+                    # Extract data
+                    X_train = train_data[ticker]['X']
+                    y_train = train_data[ticker]['y']
+                    X_test = test_data[ticker]['X']
+                    y_test = test_data[ticker]['y']
+
+                    # Validate data shapes
                     logger.debug(f"X_train shape: {X_train.shape}")
                     logger.debug(f"y_train shape: {y_train.shape}")
                     logger.debug(f"X_test shape: {X_test.shape}")  
@@ -284,7 +313,7 @@ def main():
                     evaluate_strategy(ml_results, tech_results, ticker)
                     
                 except Exception as e:
-                    logger.error(f"Error in main: {e}")
+                    logger.error(f"Error in main for ticker {ticker}: {e}")
                     traceback.print_exc()
         else:
             logger.error("No tickers found in config.data")

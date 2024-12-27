@@ -9,6 +9,10 @@ import numpy as np
 import logging
 from .base_model import BaseModel
 
+
+logger = logging.getLogger(__name__)
+
+
 class MLModel(BaseModel):
     def __init__(self, config: 'Config'):
         try:
@@ -106,52 +110,37 @@ class MLModel(BaseModel):
         """Train the ML model."""
         try:
             logger.info(f"Training model with {len(X_train)} samples for {self.epochs} epochs")
+            
+            # Validate input data types
+            if not isinstance(X_train, np.ndarray):
+                raise ValueError("X_train must be a NumPy array.")
+            if not isinstance(y_train, np.ndarray):
+                raise ValueError("y_train must be a NumPy array.")
+            if X_val is not None and not isinstance(X_val, np.ndarray):
+                raise ValueError("X_val must be a NumPy array if provided.")
+            if y_val is not None and not isinstance(y_val, np.ndarray):
+                raise ValueError("y_val must be a NumPy array if provided.")
+            
+            # Validate shapes
+            if len(X_train.shape) != 3:
+                raise ValueError(f"X_train must be 3D (samples, timesteps, features), but got {X_train.shape}")
+            if len(y_train.shape) != 2:
+                raise ValueError(f"y_train must be 2D (samples, prediction_horizon), but got {y_train.shape}")
+            if X_val is not None and len(X_val.shape) != 3:
+                raise ValueError(f"X_val must be 3D (samples, timesteps, features), but got {X_val.shape}")
+            if y_val is not None and len(y_val.shape) != 2:
+                raise ValueError(f"y_val must be 2D (samples, prediction_horizon), but got {y_val.shape}")
 
-            # Debugging: Print input data shapes and other information
-            logger.debug(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape if y_train is not None else None}")
-            logger.debug(f"X_val shape: {X_val.shape if X_val is not None else None}, y_val shape: {y_val.shape if y_val is not None else None}")
-            
-            logger.debug(f"X_train columns: {X_train.columns}")
-            logger.debug(f"X_train head: {X_train.head()}")
-            logger.debug(f"X_train tail: {X_train.tail()}")
-            logger.debug(f"X_train info: {X_train.info()}")
-            logger.debug(f"X_train describe: {X_train.describe()}")
-            logger.debug(f"X_train dtypes: {X_train.dtypes}")
-            logger.debug(f"X_train index: {X_train.index}")
-            logger.debug(f"X_train values: {X_train.values}")
+            # Debugging: Log the shapes of the data
+            logger.debug(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+            if X_val is not None and y_val is not None:
+                logger.debug(f"X_val shape: {X_val.shape}, y_val shape: {y_val.shape}")
 
-            # Reshape input data to 3D format (samples, timesteps, features)
-            num_samples = X_train.shape[0]
-            num_features = X_train.shape[1]
-            num_timesteps = num_samples // self.lookback_period
-            
-            # Truncate data to fit the desired shape
-            X_train = X_train[:num_timesteps*self.lookback_period]
-            X_train = X_train.values.reshape((num_timesteps, self.lookback_period, num_features))
-            
-            if y_train is not None:
-                y_train = y_train[:num_timesteps]
-            else:
-                y_train = None
-            
-            if X_val is not None:
-                num_val_samples = X_val.shape[0]
-                num_val_timesteps = num_val_samples // self.lookback_period
-                X_val = X_val[:num_val_timesteps*self.lookback_period]
-                X_val = X_val.values.reshape((num_val_timesteps, self.lookback_period, X_val.shape[1]))
-                
-                if y_val is not None:
-                    y_val = y_val[:num_val_timesteps]
-                else:
-                    y_val = None
-            
-            # Debugging: Print model input shape
-            logger.debug(f"Model input shape: {(X_train.shape[1], X_train.shape[2])}")
-            
             # Log training configurations
             logger.info(f"Epochs: {self.epochs}, Batch Size: {self.batch_size}")
             logger.info(f"Validation Data: {'Provided' if X_val is not None and y_val is not None else 'Not Provided'}")
-            
+
+            # Define callbacks
             callbacks = [
                 EarlyStopping(
                     monitor='val_loss',
@@ -174,27 +163,26 @@ class MLModel(BaseModel):
                 )
             ]
             
-            if X_val is not None and y_val is not None:
-                validation_data = (X_val, y_val)
-            else:
-                validation_data = None
-                callbacks = callbacks[:2]  # Remove ModelCheckpoint if no validation data
-            
+            if X_val is None or y_val is None:
+                callbacks = callbacks[:-1]  # Remove ModelCheckpoint if no validation data
+
+            # Train the model
             history = self.model.fit(
                 X_train, y_train,
                 epochs=self.epochs,
                 batch_size=self.batch_size,
-                validation_data=validation_data,
+                validation_data=(X_val, y_val) if X_val is not None and y_val is not None else None,
                 callbacks=callbacks,
                 verbose=1
             )
-            
+
             self.is_trained = True
             return history.history
-            
+
         except Exception as e:
             logger.error(f"Error training model: {str(e)}")
-            raise e
+            raise
+
         
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions with uncertainty estimation."""

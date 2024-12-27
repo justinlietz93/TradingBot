@@ -1,5 +1,6 @@
 from sklearn.model_selection import train_test_split
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,27 @@ def split_data(data):
     test_data = {}
     
     for ticker, ticker_data in data.items():
-        logger.info(f"Processing ticker: {ticker}")
-        
+        logger.debug(f"Ticker: {ticker}, keys: {list(ticker_data.keys())}")
+
+        if 'X' not in ticker_data or 'y' not in ticker_data:
+            raise ValueError(f"Missing 'X' or 'y' in data for ticker {ticker}")
+
         X = ticker_data['X']  # Shape: (samples, timesteps, features)
         y = ticker_data['y']  # Shape: (samples,) or (samples, prediction_horizon)
-        
+
+        # Check data types
+        if not isinstance(X, np.ndarray):
+            raise ValueError(f"'X' for {ticker} must be a NumPy array but got {type(X)}")
+        if not isinstance(y, np.ndarray):
+            raise ValueError(f"'y' for {ticker} must be a NumPy array but got {type(y)}")
+
+        # Validate shapes
+        if len(X.shape) != 3:
+            raise ValueError(f"'X' for {ticker} must be 3D but got shape {X.shape}")
+        if len(y.shape) not in [1, 2]:
+            raise ValueError(f"'y' for {ticker} must be 1D or 2D but got shape {y.shape}")
+
+
         logger.info(f"Sequence shape for {ticker}: X={X.shape}, y={y.shape}")
         
         # Calculate split index (80% train, 20% test)
