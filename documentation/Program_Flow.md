@@ -1,54 +1,137 @@
-Program Flow Documentation
+# Program Flow Documentation
 
-1. Program Entry Point
-- The program starts execution from the main.py file.
-- The main function in main.py is the entry point of the program.
-- It loads the configuration settings from the config.py file.
-- The main function initializes the MLModel class with the loaded configuration.
+## 1. Program Entry Point
+- Program execution starts from `main.py`
+- Main function initializes core components:
+  - Configuration loading from `config.py`
+  - Logging setup with hierarchical structure
+  - Model initialization with enhanced LSTM architecture
+  - Strategy setup with hybrid approach
 
+## 2. Data Pipeline
+### 2.1 Data Loading
+- `DataLoader` class handles data acquisition:
+  - Fetches historical data from Yahoo Finance
+  - Validates data integrity
+  - Handles missing values
+  - Manages data updates
 
-2. Data Loading and Preprocessing
-- The data loading and preprocessing steps are handled in the data_loader.py and data_splitter.py files.
-- The DataLoader class in data_loader.py is responsible for loading the raw data from external sources (e.g., CSV files or APIs).
-- The loaded data is then preprocessed using various methods in the DataLoader class, such as cleaning, feature engineering, and normalization.
-- The preprocessed data is split into training and testing sets using the split_data function in data_splitter.py.
-- The split_data function takes the preprocessed data and splits it based on a specified ratio (e.g., 80% for training, 20% for testing).
+### 2.2 Feature Engineering
+- `FeatureEngineer` class processes raw data:
+  - Calculates technical indicators
+  - Performs feature scaling
+  - Creates derived features
+  - Handles sequence generation
+  - Validates feature quality
 
+### 2.3 Data Preprocessing
+- Data cleaning and validation
+- Sequence creation for LSTM input
+- Feature normalization
+- Train/validation/test splitting
+- Data integrity checks
 
-3. Model Architecture
-- The model architecture is defined in the ml_model.py file.
-- The MLModel class in ml_model.py inherits from the BaseModel class defined in base_model.py.
-- The build_model method in MLModel is responsible for constructing the LSTM model architecture.
-- The LSTM model consists of multiple LSTM layers, followed by dropout, normalization, and dense layers.
-- The _build_lstm_model method defines the specific architecture of the LSTM model, including the number of units, dropout rate, and activation functions.
+## 3. Model Architecture
+### 3.1 Enhanced LSTM Model
+- `MLModel` class implements sophisticated neural network:
+  - Multi-head attention mechanism
+  - Residual connections
+  - Layer normalization
+  - Adaptive dropout
+  - Custom loss functions
+  - Direction accuracy metrics
 
+### 3.2 Model Components
+- Input layer with proper shape handling
+- LSTM layers with attention
+- Dense layers for feature extraction
+- Output layers for returns and directions
+- Custom metrics and loss calculations
 
-4. Model Training
-- The model training process is handled in the train method of the MLModel class.
-- The train method takes the preprocessed training data (X_train and y_train) and validation data (X_val and y_val) as input.
-- It reshapes the input data into the required 3D format (samples, timesteps, features) for LSTM input.
-- The training process is configured with the specified number of epochs, batch size, and callbacks (e.g., early stopping, learning rate reduction).
-- The model is compiled with an optimizer (e.g., Adam), loss function (e.g., custom_loss), and evaluation metrics (e.g., mean absolute error, direction accuracy).
-- The model is trained using the fit method, which iterates over the training data for the specified number of epochs.
-- The training progress is monitored using the validation data, and the best model weights are saved based on the validation loss.
+## 4. Training Process
+### 4.1 Model Training
+- Configurable training parameters
+- Early stopping implementation
+- Learning rate scheduling
+- Model checkpointing
+- Performance monitoring
+- Validation checks
 
+### 4.2 Training Flow
+1. Data preparation
+2. Model compilation
+3. Training execution
+4. Validation monitoring
+5. Model saving
+6. Performance logging
 
-5. Data Validation and Error Handling
-- Data validation is performed in the validate_data method of the BaseModel class.
-- The validate_data method checks the shape and format of the input data (X) and target data (y) to ensure they meet the expected requirements.
-- Error handling is implemented throughout the codebase using try-except blocks to catch and handle exceptions gracefully.
-- Logging statements are used to record important information, warnings, and errors during program execution.
+## 5. Trading Strategy
+### 5.1 Hybrid Strategy Implementation
+- `MLTradingStrategy` combines:
+  - ML predictions
+  - Technical analysis
+  - Market conditions
+  - Risk management
+  - Position sizing
 
+### 5.2 Signal Generation
+- ML prediction processing
+- Technical indicator confirmation
+- Signal validation
+- Risk assessment
+- Trade execution rules
 
-6. Program Termination
-- After the model training is completed, the program execution reaches the end of the main function in main.py.
-- The trained model is saved to disk using the save_model method of the MLModel class.
-- The program terminates, and the trained model can be used for making predictions on new data.
+## 6. Execution Flow
+### 6.1 Main Loop
+1. Data update and preprocessing
+2. Feature calculation
+3. Model prediction
+4. Signal generation
+5. Trade execution
+6. Performance monitoring
 
+### 6.2 Risk Management
+- Position size calculation
+- Stop-loss management
+- Portfolio exposure control
+- Drawdown monitoring
+- Risk metrics tracking
 
-References:
-- main.py: Program entry point and main function.
-- data_loader.py: Data loading and preprocessing.
-- data_splitter.py: Data splitting into training and testing sets.
-- ml_model.py: Model architecture and training.
-- base_model.py: Base class for models, including data validation and error handling.
+## 7. Logging and Monitoring
+### 7.1 Logging System
+- Hierarchical log structure:
+  - Execution logs
+  - Training logs
+  - Trading logs
+  - Error logs
+  - Performance logs
+
+### 7.2 Performance Tracking
+- Real-time metrics
+- Portfolio analytics
+- Risk measures
+- Trade statistics
+- System health monitoring
+
+## 8. Error Handling
+### 8.1 Exception Management
+- Comprehensive error catching
+- Graceful degradation
+- System recovery
+- State preservation
+- Error reporting
+
+### 8.2 Validation
+- Data validation
+- Model validation
+- Strategy validation
+- Trade validation
+- Performance validation
+
+## References
+- `main.py`: Program entry and orchestration
+- `data_loader.py`: Data acquisition and preprocessing
+- `feature_engineer.py`: Feature engineering and validation
+- `ml_model.py`: Enhanced LSTM model implementation
+- `ml_strategy.py`: Hybrid trading strategy
+- `risk_manager.py`: Risk management system
