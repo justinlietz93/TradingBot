@@ -143,7 +143,7 @@ class MLModel:
         directions_loss = self._directions_loss(y_true, y_pred)
         return returns_loss + directions_loss
     
-    def train(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray = None, y_val: np.ndarray = None, epochs: int = None, batch_size: int = None) -> None:
+    def train(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray = None, y_val: np.ndarray = None, epochs: int = None, batch_size: int = None) -> Dict[str, list]:
         """Train the model with enhanced validation and monitoring."""
         try:
             # Use config values if not provided
@@ -204,7 +204,7 @@ class MLModel:
             
             # Configure file logging
             log_file = training_dir / "training.log"
-            file_handler = logging.FileHandler(log_file)
+            file_handler = logging.FileHandler(log_file, encoding='utf-8', errors='replace')
             file_handler.setLevel(logging.INFO)
             file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
             logger.addHandler(file_handler)
@@ -250,82 +250,97 @@ class MLModel:
                     )
                 ]
                 
-                # Save initial model architecture
-                model_json = self.model.to_json()
-                architecture_path = checkpoints_dir / 'model_architecture.json'
-                with open(architecture_path, 'w') as f:
-                    f.write(model_json)
-                logger.info(f"Saved initial model architecture to {architecture_path}")
-                
-                # Train with validation split if no validation data provided
-                if X_val is not None and y_val is not None:
-                    logger.info(f"Training with provided validation data. Logs will be saved to {training_dir}")
-                    history = self.model.fit(
-                        X_train, y_train,
-                        validation_data=(X_val, y_val),
-                        epochs=epochs,
-                        batch_size=batch_size,
-                        callbacks=callbacks,
-                        verbose=1
-                    )
-                else:
-                    logger.info(f"Training with validation split. Logs will be saved to {training_dir}")
-                    history = self.model.fit(
-                        X_train, y_train,
-                        validation_split=0.2,
-                        epochs=epochs,
-                        batch_size=batch_size,
-                        callbacks=callbacks,
-                        verbose=1
-                    )
-                
+                # Save model architecture
+                try:
+                    with open(checkpoints_dir / 'model_architecture.json', 'w', encoding='utf-8') as f:
+                        f.write(self.model.to_json())
+                    logger.info(f"Saved initial model architecture to {checkpoints_dir / 'model_architecture.json'}")
+                except Exception as e:
+                    logger.warning(f"Could not save model architecture: {str(e)}")
+
+                logger.info(f"Training {'with provided validation data' if X_val is not None else 'without validation data'}. Logs will be saved to {training_dir}")
+
+                # Train the model
+                history = self.model.fit(
+                    X_train, y_train,
+                    validation_data=(X_val, y_val) if X_val is not None else None,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    callbacks=callbacks,
+                    verbose=1
+                )
+
+                if history is None:
+                    logger.error("Model training failed: fit() returned None")
+                    return None
+
                 # Log training results
                 final_epoch = len(history.history['loss'])
+                best_epoch = np.argmin(history.history['val_loss' if X_val is not None else 'loss']) + 1
+
                 logger.info(f"Training completed after {final_epoch} epochs")
                 logger.info(f"Final training loss: {history.history['loss'][-1]:.4f}")
-                if 'val_loss' in history.history:
+                if X_val is not None:
                     logger.info(f"Final validation loss: {history.history['val_loss'][-1]:.4f}")
-                
-                # Log best model metrics
-                best_epoch = np.argmin(history.history['val_loss' if X_val is not None else 'loss'])
-                logger.info(f"Best model found at epoch {best_epoch + 1}")
-                logger.info(f"Best training loss: {history.history['loss'][best_epoch]:.4f}")
-                if 'val_loss' in history.history:
-                    logger.info(f"Best validation loss: {history.history['val_loss'][best_epoch]:.4f}")
-                
+                logger.info(f"Best model found at epoch {best_epoch}")
+                logger.info(f"Best training loss: {min(history.history['loss']):.4f}")
+                if X_val is not None:
+                    logger.info(f"Best validation loss: {min(history.history['val_loss']):.4f}")
+
                 # Save training history
-                history_path = str(training_dir / 'training_history.npy')
-                np.save(history_path, history.history)
-                logger.info(f"Training history saved to {history_path}")
-                
+                try:
+                    history_file = training_dir / 'training_history.npy'
+                    np.save(history_file, history.history)
+                    logger.info(f"Training history saved to {history_file}")
+                except Exception as e:
+                    logger.warning(f"Could not save training history: {str(e)}")
+
                 # Save final model
-                final_model_path = str(checkpoints_dir / 'final_model.keras')
-                self.model.save(final_model_path)
-                logger.info(f"Final model saved to {final_model_path}")
-                
-                # Save model summary
-                summary_path = str(checkpoints_dir / 'model_summary.txt')
-                with open(summary_path, 'w') as f:
-                    self.model.summary(print_fn=lambda x: f.write(x + '\n'))
-                logger.info(f"Model summary saved to {summary_path}")
-                
+                try:
+                    final_model_path = checkpoints_dir / 'final_model.keras'
+                    self.model.save(final_model_path)
+                    logger.info(f"Final model saved to {final_model_path}")
+                except Exception as e:
+                    logger.warning(f"Could not save final model: {str(e)}")
+
                 return history.history
-                
+
             except Exception as e:
                 logger.error(f"Error during training: {str(e)}")
-                raise
+                return None
+
             finally:
-                # Remove the file handler to avoid duplicate logging
+                # Clean up file handler
                 logger.removeHandler(file_handler)
+                file_handler.close()
             
         except Exception as e:
             logger.error(f"Error during training: {str(e)}")
-            raise
+            return None
             
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Generate predictions for the input data."""
         try:
-            return self.model.predict(X, verbose=0)
+            # Make predictions
+            predictions = self.model.predict(X, verbose=0)
+            
+            # Log prediction shapes and statistics
+            logger.info(f"Generated predictions with shape: {predictions.shape}")
+            
+            # Split predictions into returns and directions
+            returns = predictions[:, :self.horizon]
+            directions = predictions[:, self.horizon:]
+            
+            # Log prediction statistics
+            logger.info("Prediction statistics:")
+            logger.info(f"  Returns - Mean: {returns.mean():.4f}, Std: {returns.std():.4f}")
+            logger.info(f"  Directions - Mean: {directions.mean():.4f}, Std: {directions.std():.4f}")
+            
+            # Combine predictions
+            combined_predictions = np.concatenate([returns, directions], axis=1)
+            
+            return combined_predictions
+            
         except Exception as e:
             logger.error(f"Error during prediction: {str(e)}")
             raise

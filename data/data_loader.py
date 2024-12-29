@@ -344,7 +344,7 @@ class DataLoader:
                         continue
                         
                     # Verify target shape
-                    expected_target_shape = horizon * 2  # Updated to account for both returns and directions
+                    expected_target_shape = horizon * 2  # Both returns and directions
                     if y.shape[1] != expected_target_shape:
                         logger.error(f"Invalid target shape for {ticker}. Expected {expected_target_shape}, got {y.shape[1]}")
                         continue

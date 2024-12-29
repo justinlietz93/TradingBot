@@ -23,6 +23,7 @@ build/
 *.sublime-project
 *.sublime-workspace
 *.cursorrules
+memory.json
 
 # Data files
 *.csv
