@@ -3,7 +3,8 @@
 ## Directory Structure Diagram
 
 ```mermaid
-graph TD
+%%{init: {'theme': 'default', 'themeVariables': {'fontColor': '#000000'}}}%%
+graph LR
     A[Trading Bot] --> B[config]
     A --> C[data]
     A --> D[models]
