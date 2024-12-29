@@ -106,20 +106,36 @@ class DataLoader:
         """Scale features using rolling standardization."""
         # List of features to scale
         price_cols = ['open', 'high', 'low', 'close']
-        return_cols = ['returns', 'log_returns']
-        indicator_cols = [col for col in df.columns if col not in price_cols + return_cols + ['volume', 'target_next_return', 'target_direction']]
+        volume_cols = ['volume', 'volume_ema']
+        indicator_cols = [
+            'ema_5', 'ema_10', 'ema_20', 'ema_50',
+            'macd', 'macd_signal', 'macd_hist',
+            'atr', 'obv', 'cmf', 'price_momentum',
+            'volume_momentum', 'volatility_14', 'ema_ratio_fast',
+            'ema_ratio_slow'
+        ]
         
         # Scale price features
         for col in price_cols:
-            df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+            if col in df.columns:
+                df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
         
-        # Scale volume
-        df['volume_scaled'] = (df['volume'] - df['volume'].rolling(window=20).mean()) / df['volume'].rolling(window=20).std()
+        # Scale volume features
+        for col in volume_cols:
+            if col in df.columns:
+                df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
         
         # Scale technical indicators
         for col in indicator_cols:
-            if df[col].std() != 0:  # Only scale if there's variation
-                df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+            if col in df.columns:
+                if df[col].std() != 0:  # Only scale if there's variation
+                    df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+                else:
+                    df[f'{col}_scaled'] = 0  # Set to 0 if no variation
+        
+        # Fill NaN values with 0 for scaled features
+        scaled_cols = [col for col in df.columns if col.endswith('_scaled')]
+        df[scaled_cols] = df[scaled_cols].fillna(0)
         
         return df
 
@@ -135,96 +151,89 @@ class DataLoader:
 
     def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add technical indicators using pandas_ta."""
-        # Convert volume to float64 to avoid dtype issues
-        df['volume'] = df['volume'].astype(np.float64)
-        
-        # Price-based features
-        df['log_return'] = np.log(df['close'] / df['close'].shift(1))
-        df['high_low_ratio'] = df['high'] / df['low']
-        df['close_open_ratio'] = df['close'] / df['open']
-        
-        # Trend indicators
-        df['ema_5'] = df.ta.ema(length=5)
-        df['ema_10'] = df.ta.ema(length=10)
-        df['ema_20'] = df.ta.ema(length=20)
-        df['ema_50'] = df.ta.ema(length=50)
-        
-        # Momentum indicators
-        df['rsi'] = df.ta.rsi(length=14)
-        stoch = df.ta.stoch(length=14)
-        df['stoch_k'] = stoch['STOCHk_14_3_3']
-        df['stoch_d'] = stoch['STOCHd_14_3_3']
-        df['willr'] = df.ta.willr(length=14)
-        df['roc'] = df.ta.roc(length=12)
-        
-        # Volatility indicators
-        bbands = df.ta.bbands(length=20)
-        df['bb_upper'] = bbands['BBU_20_2.0']
-        df['bb_middle'] = bbands['BBM_20_2.0']
-        df['bb_lower'] = bbands['BBL_20_2.0']
-        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
-        df['atr'] = df.ta.atr(length=14)
-        
-        # Volume indicators
-        df['volume_ema'] = df.ta.ema(close=df['volume'], length=20)
-        df['volume_ratio'] = df['volume'] / df['volume_ema']
-        df['obv'] = df.ta.obv()
-        df['cmf'] = df.ta.cmf(length=20)
-        
-        # Calculate MFI with proper type conversion
         try:
-            # Convert price and volume data to float64 for MFI calculation
+            # Convert volume to float64 to avoid dtype issues
+            df['volume'] = df['volume'].astype(np.float64)
+            
+            # Price-based features
+            df['log_return'] = np.log(df['close'] / df['close'].shift(1))
+            df['high_low_ratio'] = df['high'] / df['low']
+            df['close_open_ratio'] = df['close'] / df['open']
+            
+            # Trend indicators
+            df['ema_5'] = df.ta.ema(length=5)
+            df['ema_10'] = df.ta.ema(length=10)
+            df['ema_20'] = df.ta.ema(length=20)
+            df['ema_50'] = df.ta.ema(length=50)
+            
+            # Momentum indicators
+            df['rsi'] = df.ta.rsi(length=14)
+            stoch = df.ta.stoch(length=14)
+            df['stoch_k'] = stoch['STOCHk_14_3_3']
+            df['stoch_d'] = stoch['STOCHd_14_3_3']
+            df['willr'] = df.ta.willr(length=14)
+            df['roc'] = df.ta.roc(length=12)
+            
+            # Volatility indicators
+            bbands = df.ta.bbands(length=20)
+            df['bb_upper'] = bbands['BBU_20_2.0']
+            df['bb_middle'] = bbands['BBM_20_2.0']
+            df['bb_lower'] = bbands['BBL_20_2.0']
+            df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+            df['atr'] = df.ta.atr(length=14)
+            
+            # Volume indicators
+            df['volume_ema'] = df.ta.ema(close=df['volume'], length=20)
+            df['volume_ratio'] = df['volume'] / df['volume_ema']
+            df['obv'] = df.ta.obv()
+            df['cmf'] = df.ta.cmf(length=20)
+            
+            # MACD
+            macd = df.ta.macd()
+            df['macd'] = macd['MACD_12_26_9']
+            df['macd_signal'] = macd['MACDs_12_26_9']
+            df['macd_hist'] = macd['MACDh_12_26_9']
+            
+            # Custom features
+            df['price_momentum'] = df['close'].pct_change(5)
+            df['volume_momentum'] = df['volume'].pct_change(5)
+            df['volatility_14'] = df['log_return'].rolling(window=14).std() * np.sqrt(252)
+            
+            # Cross-sectional features
+            df['ema_ratio_fast'] = df['ema_5'] / df['ema_10']
+            df['ema_ratio_slow'] = df['ema_10'] / df['ema_20']
+            df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+            
+            # Calculate MFI
             high = df['high'].astype(np.float64)
             low = df['low'].astype(np.float64)
             close = df['close'].astype(np.float64)
             volume = df['volume'].astype(np.float64)
             
-            # Calculate typical price
             typical_price = (high + low + close) / 3
-            
-            # Calculate raw money flow
             raw_money_flow = typical_price * volume
             
-            # Calculate positive and negative money flow
             positive_flow = raw_money_flow.where(typical_price > typical_price.shift(1), 0)
             negative_flow = raw_money_flow.where(typical_price < typical_price.shift(1), 0)
             
-            # Calculate money flow ratio
             positive_flow_sum = positive_flow.rolling(window=14).sum()
             negative_flow_sum = negative_flow.rolling(window=14).sum()
             money_flow_ratio = positive_flow_sum / negative_flow_sum
             
-            # Calculate MFI
             df['mfi'] = 100 - (100 / (1 + money_flow_ratio))
             df['mfi'] = df['mfi'].fillna(50)  # Fill NaN with neutral value
             
+            # Drop any columns with all NaN values
+            df = df.dropna(axis=1, how='all')
+            
+            # Forward fill any remaining NaN values
+            df = df.ffill().fillna(0)
+            
+            return df
+            
         except Exception as e:
-            logger.warning(f"Error calculating MFI: {str(e)}")
-            df['mfi'] = 50  # Set to neutral value on error
-        
-        # MACD
-        macd = df.ta.macd()
-        df['macd'] = macd['MACD_12_26_9']
-        df['macd_signal'] = macd['MACDs_12_26_9']
-        df['macd_hist'] = macd['MACDh_12_26_9']
-        
-        # Custom features
-        df['price_momentum'] = df['close'].pct_change(5)
-        df['volume_momentum'] = df['volume'].pct_change(5)
-        df['volatility_14'] = df['log_return'].rolling(window=14).std() * np.sqrt(252)
-        
-        # Cross-sectional features
-        df['ema_ratio_fast'] = df['ema_5'] / df['ema_10']
-        df['ema_ratio_slow'] = df['ema_10'] / df['ema_20']
-        df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
-        
-        # Drop any columns with all NaN values
-        df = df.dropna(axis=1, how='all')
-        
-        # Forward fill any remaining NaN values
-        df = df.ffill().fillna(0)
-        
-        return df
+            logger.error(f"Error calculating technical indicators: {str(e)}")
+            raise
 
     def create_sequences(self, data: pd.DataFrame, lookback_period: int, horizon: int) -> Tuple[np.ndarray, np.ndarray]:
         """Create sequences for LSTM input with enhanced feature selection."""
@@ -232,7 +241,7 @@ class DataLoader:
             # Define core features that should be available for all stocks
             core_scaled_features = [
                 'open_scaled', 'high_scaled', 'low_scaled', 'close_scaled',
-                'volume_scaled', 'ema_5_scaled', 'ema_10_scaled', 'ema_20_scaled',
+                'volume_scaled', 'volume_ema_scaled', 'ema_5_scaled', 'ema_10_scaled', 'ema_20_scaled',
                 'ema_50_scaled', 'macd_scaled', 'macd_signal_scaled', 'macd_hist_scaled',
                 'atr_scaled', 'obv_scaled', 'cmf_scaled', 'price_momentum_scaled',
                 'volume_momentum_scaled', 'volatility_14_scaled', 'ema_ratio_fast_scaled',

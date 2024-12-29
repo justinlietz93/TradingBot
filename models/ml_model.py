@@ -96,8 +96,8 @@ class MLModel:
         
         model.compile(
             optimizer=optimizer,
-            loss=self._combined_loss,
-            metrics=['mae', self._direction_accuracy]
+            loss=self.combined_loss,
+            metrics=['mae', self.direction_accuracy]
         )
         
         logger.info("Built enhanced LSTM model with improved feature extraction")
@@ -105,7 +105,7 @@ class MLModel:
         
         return model
         
-    def _direction_accuracy(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    def direction_accuracy(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Calculate direction prediction accuracy."""
         # Split predictions and true values into returns and directions
         pred_returns = y_pred[:, :self.horizon]
@@ -137,7 +137,7 @@ class MLModel:
             tf.nn.sigmoid(pred_directions)
         )
     
-    def _combined_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    def combined_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         """Combined loss function for both returns and directions."""
         returns_loss = self._returns_loss(y_true, y_pred)
         directions_loss = self._directions_loss(y_true, y_pred)

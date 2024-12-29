@@ -1,10 +1,11 @@
 # Virtual environment
-/trading_env/
+/trading_env/*
 /venv/
 
 # Log files
-/logs/
-/models/checkpoints/
+/logs/*
+/models/checkpoints/*
+*.log
 
 # Compiled Python files
 *.pyc

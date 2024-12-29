@@ -134,7 +134,7 @@ class Config:
             'prediction_horizon': 5,
             'train_split': 0.7,
             'val_split': 0.15,
-            'epochs': 100,
+            'epochs': 5,
             'batch_size': 64,
             'learning_rate': 0.001,
             'dropout_rate': 0.2,

@@ -1,3 +1,6 @@
+"""
+Main entry point for the trading bot.
+"""
 import os
 from datetime import datetime
 import logging
@@ -6,6 +9,8 @@ import sys
 import pandas as pd
 import numpy as np
 import traceback
+import argparse
+import tensorflow as tf
 from config.config import Config
 from data.data_loader import DataLoader
 from data.data_splitter import split_data
@@ -44,7 +49,7 @@ def setup_logging():
 
 logger, error_logger = setup_logging()
 
-def process_ticker(ticker, data_loader, config):
+def process_ticker(ticker, data_loader, config, model_path=None):
     """Process a single ticker's training and backtesting."""
     try:
         logger.info(f"Processing {ticker}...")
@@ -86,80 +91,88 @@ def process_ticker(ticker, data_loader, config):
         X_val, y_val = val_data[ticker]['X'], val_data[ticker]['y']
         X_test, y_test = test_data[ticker]['X'], test_data[ticker]['y']
         
-        # Initialize and train ML model
+        # Initialize ML model
         try:
             input_shape = X_train.shape[1:]
             horizon = config.model['prediction_horizon']
             model = MLModel(input_shape=input_shape, horizon=horizon, config=config.model)
             
-            logger.info(f"Training ML model for {ticker}...")
-            history = model.train(
-                X_train, y_train,
-                X_val, y_val
-            )
+            if model_path:
+                try:
+                    # Load pre-trained model
+                    logger.info(f"Loading pre-trained model from {model_path}")
+                    model.model = tf.keras.models.load_model(model_path, compile=False)
+                    model.model.compile(
+                        optimizer=tf.keras.optimizers.Adam(learning_rate=config.model['learning_rate']),
+                        loss=model.combined_loss,
+                        metrics=[model.direction_accuracy]
+                    )
+                    logger.info("Successfully loaded and compiled pre-trained model")
+                except Exception as e:
+                    error_logger.error(f"Failed to load pre-trained model: {str(e)}\n{traceback.format_exc()}")
+                    return None, None
+            else:
+                # Train new model
+                logger.info(f"Training ML model for {ticker}...")
+                history = model.train(
+                    X_train, y_train,
+                    X_val, y_val
+                )
+                
+                # Check if training was successful
+                if history is None:
+                    error_logger.error(f"Training failed for {ticker}: No history returned")
+                    return None, None
+                
+                # Log training metrics
+                logger.info(f"Training history for {ticker}:")
+                for metric, values in history.items():
+                    logger.info(f"  {metric}: {values[-1]:.4f}")
             
-            # Check if training was successful
-            if history is None:
-                error_logger.error(f"Training failed for {ticker}: No history returned")
+            # Make predictions on test set
+            try:
+                predictions = model.predict(X_test)
+                if predictions is None:
+                    error_logger.error(f"Prediction failed for {ticker}: No predictions returned")
+                    return None, None
+            except Exception as e:
+                error_logger.error(f"Failed to make predictions for {ticker}: {str(e)}\n{traceback.format_exc()}")
                 return None, None
             
-            # Log training metrics
-            logger.info(f"Training history for {ticker}:")
-            for metric, values in history.items():
-                logger.info(f"  {metric}: {values[-1]:.4f}")
-                
-            # Save training metrics to CSV
+            # Initialize strategy with ML predictions
             try:
-                metrics_file = Path(config.paths['logs_dir']) / 'training' / f'{ticker}_metrics.csv'
-                metrics_df = pd.DataFrame(history)
-                metrics_df.to_csv(metrics_file, index=False)
-                logger.info(f"Saved training metrics to {metrics_file}")
-            except Exception as e:
-                error_logger.warning(f"Failed to save training metrics for {ticker}: {str(e)}")
+                strategy = MLTradingStrategy(config)
                 
+                # Get the original feature data for backtesting
+                backtest_data = data_loader.data[ticker].iloc[-len(test_data[ticker]['X']):]
+                backtest_results = strategy.backtest(backtest_data, predictions)
+                
+                if backtest_results is None:
+                    error_logger.error(f"Backtesting failed for {ticker}: No results returned")
+                    return None, None
+                
+                metrics = backtest_results['metrics']
+                trades = backtest_results['trades']
+                equity_curve = backtest_results['equity_curve']
+                
+                if trades and metrics:
+                    logger.info(f"Backtest completed for {ticker}. Metrics:")
+                    logger.info(f"  - Total trades: {metrics['total_trades']}")
+                    logger.info(f"  - Win rate: {metrics['win_rate']:.2%}")
+                    logger.info(f"  - Total return: {metrics['total_return']:.2%}")
+                    logger.info(f"  - Max drawdown: {metrics['max_drawdown']:.2%}")
+                    logger.info(f"  - Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
+                    logger.info(f"  - Profit factor: {metrics['profit_factor']:.2f}")
+                    return metrics, trades
+                else:
+                    error_logger.error(f"No valid backtest results for {ticker}")
+                    return None, None
+            except Exception as e:
+                error_logger.error(f"Failed to run backtest for {ticker}: {str(e)}\n{traceback.format_exc()}")
+                return None, None
+            
         except Exception as e:
             error_logger.error(f"Failed to train model for {ticker}: {str(e)}\n{traceback.format_exc()}")
-            return None, None
-        
-        # Make predictions on test set
-        try:
-            predictions = model.predict(X_test)
-            if predictions is None:
-                error_logger.error(f"Prediction failed for {ticker}: No predictions returned")
-                return None, None
-        except Exception as e:
-            error_logger.error(f"Failed to make predictions for {ticker}: {str(e)}\n{traceback.format_exc()}")
-            return None, None
-        
-        # Initialize strategy with ML predictions
-        try:
-            strategy = MLTradingStrategy(config)
-            
-            # Prepare data for backtesting
-            backtest_data = data_loader.data[ticker].iloc[-len(X_test):]
-            
-            # Run backtest with full predictions
-            trades, metrics = strategy.backtest(backtest_data, predictions)
-            
-            if trades is None or metrics is None:
-                error_logger.error(f"Backtesting failed for {ticker}: No results returned")
-                return None, None
-            
-            if trades and metrics:
-                logger.info(f"Backtest completed for {ticker}. Metrics:")
-                logger.info(f"  - Total trades: {metrics['total_trades']}")
-                logger.info(f"  - Win rate: {metrics['win_rate']:.2%}")
-                logger.info(f"  - Average return: {metrics['avg_return']:.4%}")
-                logger.info(f"  - Total return: {metrics['total_return']:.2%}")
-                logger.info(f"  - Max drawdown: {metrics['max_drawdown']:.2%}")
-                logger.info(f"  - Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
-                logger.info(f"  - Direction accuracy: {metrics['direction_accuracy']:.2%}")
-                return metrics, trades
-            else:
-                error_logger.error(f"No valid backtest results for {ticker}")
-                return None, None
-        except Exception as e:
-            error_logger.error(f"Failed to run backtest for {ticker}: {str(e)}\n{traceback.format_exc()}")
             return None, None
         
     except Exception as e:
@@ -167,73 +180,80 @@ def process_ticker(ticker, data_loader, config):
         return None, None
 
 def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Trading Bot')
+    parser.add_argument('--mode', choices=['train', 'backtest'], required=True, help='Mode of operation')
+    parser.add_argument('--model_path', help='Path to pre-trained model for backtesting')
+    args = parser.parse_args()
+    
     logger.info("=== Trading Bot Simulation Started ===")
+    
     try:
         # Load configuration
-        try:
-            config = Config.get_default_config()
-            if not config.validate():
-                error_logger.error("Invalid configuration settings")
-                return
-        except Exception as e:
-            error_logger.error(f"Failed to load configuration: {str(e)}\n{traceback.format_exc()}")
+        config = Config.get_default_config()
+        if not config.validate():
+            logger.error("Invalid configuration settings")
             return
-        
-        tickers = config.data['tickers']
-        logger.info(f"Tickers: {tickers}")
-        
-        # Initialize data loader
-        try:
-            data_loader = DataLoader(
-                tickers=tickers,
-                start_date=config.data['start_date'],
-                end_date=config.data['end_date']
-            )
             
-            # Load and preprocess data
-            data_loader.load_data()
-        except Exception as e:
-            error_logger.error(f"Failed to initialize data loader: {str(e)}\n{traceback.format_exc()}")
-            return
+        logger.info(f"Tickers: {config.data['tickers']}")
         
-        # Process each ticker
-        results = {}
         success_count = 0
         error_count = 0
-        for ticker in tickers:
-            try:
-                metrics, trades = process_ticker(ticker, data_loader, config)
-                if metrics and trades:
-                    results[ticker] = {
-                        'metrics': metrics,
-                        'trades': trades
-                    }
-                    success_count += 1
-                else:
-                    logger.warning(f"No results available for {ticker}")
-                    error_count += 1
-            except Exception as e:
-                error_logger.error(f"Failed to process {ticker}: {str(e)}\n{traceback.format_exc()}")
-                error_count += 1
-                continue
-
-        # Log final summary
-        logger.info(f"Processing complete:")
-        logger.info(f"  - Successfully processed: {success_count} tickers")
-        logger.info(f"  - Failed to process: {error_count} tickers")
-        logger.info(f"  - Total tickers: {len(tickers)}")
         
-        if success_count == 0:
-            error_logger.error("No tickers were successfully processed")
-            logger.info("=== Trading Bot Simulation Failed ===")
+        # Initialize data loader
+        data_loader = DataLoader(
+            tickers=config.data['tickers'],
+            start_date=config.data['start_date'],
+            end_date=config.data['end_date']
+        )
+        
+        # Load all data first
+        logger.info("Loading data for all tickers...")
+        try:
+            data = data_loader.load_data()
+        except Exception as e:
+            logger.error(f"Failed to load data: {str(e)}")
             return
             
+        # Prepare sequences for all tickers
+        logger.info("Preparing sequences for all tickers...")
+        try:
+            prepared_data = data_loader.prepare_data(
+                lookback_period=config.model['lookback_period'],
+                horizon=config.model['prediction_horizon']
+            )
+        except Exception as e:
+            logger.error(f"Failed to prepare data: {str(e)}")
+            return
+        
+        for ticker in config.data['tickers']:
+            try:
+                logger.info(f"Processing {ticker}...")
+                
+                if ticker not in prepared_data:
+                    logger.error(f"No prepared data available for {ticker}")
+                    error_count += 1
+                    continue
+                
+                # Process ticker with appropriate mode
+                metrics, trades = process_ticker(ticker, data_loader, config, args.model_path if args.mode == 'backtest' else None)
+                
+                if metrics is not None and trades is not None:
+                    success_count += 1
+                else:
+                    error_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing {ticker}: {str(e)}")
+                error_count += 1
+                continue
+        
         logger.info("=== Trading Bot Simulation Completed ===")
-        return results
-
+        logger.info(f"Successfully processed: {success_count}/{len(config.data['tickers'])} tickers")
+        logger.info(f"Failed to process: {error_count}/{len(config.data['tickers'])} tickers")
+        
     except Exception as e:
-        error_logger.error(f"Error in main: {str(e)}\n{traceback.format_exc()}")
-        logger.info("=== Trading Bot Simulation Failed ===")
+        logger.error(f"Fatal error: {str(e)}")
         raise
 
 if __name__ == "__main__":
