@@ -3,68 +3,116 @@ trading_bot/
 ├── config/
 │   ├── __init__.py
 │   ├── config.py           # Configuration settings
-│   └── logging_config.py   # Logging configuration
+│   ├── logging_config.py   # Logging configuration
+│   ├── parameters.py       # Trading parameters
+│   └── constants.py        # System constants
 │
 ├── data/
 │   ├── __init__.py
 │   ├── data_loader.py      # Data fetching and preprocessing
 │   ├── feature_engineer.py # Feature engineering
-│   └── data_validator.py   # Data validation utilities
+│   ├── data_validator.py   # Data validation utilities
+│   ├── data_splitter.py    # Train/test splitting
+│   └── market_data/        # Raw market data storage
+│       └── .gitkeep
 │
 ├── models/
 │   ├── __init__.py
 │   ├── base_model.py       # Abstract base class for models
 │   ├── ml_model.py         # Enhanced LSTM model implementation
-│   └── technical_model.py  # Technical analysis model
+│   ├── technical_model.py  # Technical analysis model
+│   ├── model_utils.py      # Model utilities
+│   └── checkpoints/        # Model checkpoints
+│       └── .gitkeep
 │
 ├── strategies/
 │   ├── __init__.py
 │   ├── base_strategy.py    # Abstract base class for strategies
 │   ├── ml_strategy.py      # Hybrid ML-based strategy
-│   └── technical_strategy.py # Technical analysis strategy
+│   ├── technical_strategy.py # Technical analysis strategy
+│   ├── strategy_utils.py   # Strategy utilities
+│   └── backtest/          # Backtest results
+│       └── .gitkeep
 │
 ├── utils/
 │   ├── __init__.py
 │   ├── metrics.py          # Performance metrics
 │   ├── risk_manager.py     # Risk management utilities
 │   ├── visualization.py    # Plotting and visualization
-│   └── validators.py       # Input validation utilities
+│   ├── validators.py       # Input validation utilities
+│   ├── logger.py          # Logging utilities
+│   ├── exceptions.py      # Custom exceptions
+│   └── helpers.py         # Helper functions
 │
 ├── tests/
 │   ├── __init__.py
 │   ├── test_data/         # Test data files
+│   │   ├── __init__.py
+│   │   └── sample_data/   # Sample datasets
 │   ├── test_models.py     # Model tests
 │   ├── test_strategies.py # Strategy tests
-│   └── test_utils.py      # Utility tests
+│   ├── test_utils.py      # Utility tests
+│   ├── conftest.py        # Test configuration
+│   └── fixtures/          # Test fixtures
+│       └── .gitkeep
 │
 ├── logs/
 │   ├── trading/           # Trading execution logs
+│   │   └── .gitkeep
 │   ├── training/          # Model training logs
-│   └── backtest/          # Backtest result logs
+│   │   └── .gitkeep
+│   ├── backtest/          # Backtest result logs
+│   │   └── .gitkeep
+│   └── errors/           # Error logs
+│       └── .gitkeep
 │
 ├── documentation/
 │   ├── ARCHITECTURE.md    # System architecture
 │   ├── Program_Flow.md    # Program execution flow
 │   ├── codebase_analysis.md # Code documentation
 │   ├── change_log.md      # Version history
-│   └── api/              # API documentation
+│   ├── api/              # API documentation
+│   │   ├── models.md     # Model API docs
+│   │   ├── strategies.md # Strategy API docs
+│   │   └── utils.md      # Utilities API docs
+│   ├── examples/         # Usage examples
+│   │   ├── basic_usage.md
+│   │   └── advanced_usage.md
+│   └── images/           # Documentation images
+│       └── .gitkeep
 │
 ├── notebooks/
 │   ├── analysis/         # Analysis notebooks
+│   │   └── .gitkeep
 │   ├── research/         # Research notebooks
-│   └── visualization/    # Visualization notebooks
+│   │   └── .gitkeep
+│   ├── visualization/    # Visualization notebooks
+│   │   └── .gitkeep
+│   └── examples/        # Example notebooks
+│       └── .gitkeep
 │
 ├── requirements/
 │   ├── base.txt         # Base dependencies
 │   ├── dev.txt          # Development dependencies
-│   └── test.txt         # Testing dependencies
+│   ├── test.txt         # Testing dependencies
+│   └── docs.txt         # Documentation dependencies
 │
 ├── scripts/
 │   ├── setup.py         # Setup script
 │   ├── install.py       # Installation script
-│   └── run_tests.py     # Test runner
+│   ├── run_tests.py     # Test runner
+│   ├── run_backtest.py  # Backtest runner
+│   ├── run_training.py  # Training script
+│   └── utils/          # Script utilities
+│       └── .gitkeep
 │
+├── .env                 # Environment variables
+├── .env.example         # Example environment file
 ├── .gitignore
+├── .flake8             # Flake8 configuration
+├── .pre-commit-config.yaml # Pre-commit hooks
+├── pyproject.toml      # Project configuration
+├── setup.cfg          # Setup configuration
 ├── LICENSE
 ├── README.md
 ├── requirements.txt

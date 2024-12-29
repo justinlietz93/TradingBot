@@ -1,0 +1,113 @@
+# Trading Bot Configuration
+
+# Environment Settings
+environment:
+  mode: "backtest"  # Options: backtest, paper_trading, live_trading
+  debug: false
+  log_level: "INFO"
+  timezone: "UTC"
+
+# Data Sources
+data_sources:
+  primary: "yfinance"
+  alternative: "alpha_vantage"
+  api_keys:
+    alpha_vantage: ""  # Add your API key here
+
+# Asset Universe
+assets:
+  symbols:
+    - AAPL
+    - GOOGL
+    - MSFT
+    - AMZN
+  asset_class: "equity"
+  market: "US"
+  currency: "USD"
+
+# Trading Schedule
+schedule:
+  market_open: "09:30"
+  market_close: "16:00"
+  timezone: "America/New_York"
+  trading_days:
+    - "Monday"
+    - "Tuesday"
+    - "Wednesday"
+    - "Thursday"
+    - "Friday"
+
+# Model Configuration
+model:
+  type: "lstm"
+  version: "1.0.0"
+  checkpoint_dir: "models/checkpoints"
+  save_best_only: true
+  monitor_metric: "val_loss"
+  early_stopping: true
+
+# Strategy Settings
+strategy:
+  name: "ml_strategy"
+  version: "1.0.0"
+  risk_management:
+    enabled: true
+    max_position_size: 0.1
+    stop_loss: 0.02
+    take_profit: 0.04
+    max_drawdown: 0.2
+
+# Execution Settings
+execution:
+  order_type: "market"  # Options: market, limit
+  position_sizing: "fixed_risk"  # Options: fixed_risk, fixed_size
+  max_slippage: 0.001
+  commission: 0.001
+
+# Backtesting Settings
+backtest:
+  initial_capital: 100000
+  start_date: "2010-01-01"
+  end_date: "2023-12-31"
+  commission_scheme: "percentage"  # Options: percentage, fixed
+  include_slippage: true
+  benchmark: "SPY"
+
+# Reporting
+reporting:
+  metrics:
+    - "total_return"
+    - "sharpe_ratio"
+    - "max_drawdown"
+    - "win_rate"
+    - "profit_factor"
+  plots:
+    - "equity_curve"
+    - "drawdown_chart"
+    - "monthly_returns"
+  output_dir: "reports"
+
+# Logging Configuration
+logging:
+  trading:
+    file: "logs/trading/trading.log"
+    level: "INFO"
+  training:
+    file: "logs/training/training.log"
+    level: "INFO"
+  backtest:
+    file: "logs/backtest/backtest.log"
+    level: "INFO"
+  errors:
+    file: "logs/errors/error.log"
+    level: "ERROR"
+
+# Database Configuration
+database:
+  type: "sqlite"  # Options: sqlite, postgresql
+  path: "data/trading.db"
+  tables:
+    - "trades"
+    - "positions"
+    - "performance"
+    - "signals"

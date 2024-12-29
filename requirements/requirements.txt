@@ -1,0 +1,65 @@
+# Core Dependencies
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=0.24.2
+tensorflow>=2.8.0
+keras>=2.8.0
+
+# Data Sources
+yfinance>=0.1.63
+alpha_vantage>=2.3.1
+
+# Technical Analysis
+ta-lib>=0.4.24
+pandas-ta>=0.3.14b
+
+# Data Processing
+scipy>=1.7.0
+statsmodels>=0.13.2
+
+# Visualization
+matplotlib>=3.4.2
+seaborn>=0.11.1
+plotly>=5.1.0
+
+# Machine Learning Utils
+joblib>=1.0.1
+optuna>=2.8.0
+
+# Database
+sqlalchemy>=1.4.23
+sqlite3>=3.35.0
+
+# Configuration
+pyyaml>=5.4.1
+python-dotenv>=0.19.0
+
+# Logging
+loguru>=0.5.3
+
+# Testing
+pytest>=6.2.5
+pytest-cov>=2.12.1
+
+# Development Tools
+black>=21.6b0
+flake8>=3.9.2
+isort>=5.9.2
+mypy>=0.910
+
+# Documentation
+sphinx>=4.0.2
+sphinx-rtd-theme>=0.5.2
+
+# Jupyter Environment
+jupyter>=1.0.0
+notebook>=6.4.0
+ipython>=7.25.0
+
+# Performance Optimization
+numba>=0.53.1
+dask>=2021.6.2
+
+# API Integration
+requests>=2.26.0
+aiohttp>=3.7.4

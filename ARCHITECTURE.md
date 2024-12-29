@@ -1,158 +1,132 @@
 # Trading Bot Architecture
 
-## Overview
-This trading bot is a sophisticated machine learning-based system designed to analyze financial market data and execute trades based on a hybrid approach combining LSTM predictions with technical analysis. The system uses an enhanced LSTM neural network with attention mechanisms and residual connections for improved prediction accuracy.
+## Project Structure
+
+```
+Trading_Bot/
+├── config/                      # Configuration files
+│   ├── config.yaml             # Main configuration file
+│   └── parameters.py           # Trading parameters and constants
+├── data/                       # Data storage
+│   └── market_data/           # Market data storage
+├── models/                     # ML models
+│   ├── ml_model.py            # Main ML model implementation
+│   └── checkpoints/           # Model checkpoints
+├── strategies/                 # Trading strategies
+│   ├── ml_strategy.py         # ML-based trading strategy
+│   └── backtest/              # Backtesting implementations
+├── utils/                     # Utility functions and helpers
+├── tests/                     # Test suite
+│   ├── test_data/            # Test data
+│   │   └── sample_data/      # Sample data for testing
+│   └── fixtures/             # Test fixtures
+├── logs/                      # Log files
+│   ├── trading/              # Trading logs
+│   ├── training/             # Model training logs
+│   ├── backtest/             # Backtesting logs
+│   └── errors/               # Error logs
+├── documentation/            # Documentation
+│   ├── api/                 # API documentation
+│   ├── examples/            # Usage examples
+│   └── images/              # Documentation images
+├── notebooks/               # Jupyter notebooks
+│   ├── analysis/           # Data analysis notebooks
+│   ├── research/           # Research and experimentation
+│   ├── visualization/      # Data visualization
+│   └── examples/           # Example notebooks
+├── requirements/           # Project dependencies
+│   └── requirements.txt    # Python package requirements
+└── scripts/               # Utility scripts
+    └── utils/            # Helper scripts
 
 ## Core Components
 
-### 1. Data Layer (`data/`)
-- **DataLoader**: Advanced data acquisition and preprocessing
-  - Efficient historical data fetching from Yahoo Finance
-  - Comprehensive technical indicator calculation
-  - Advanced feature engineering
-  - Robust data cleaning and validation
-  - Sequence creation with configurable lookback periods
-- **FeatureEngineer**: Sophisticated feature engineering
-  - Technical indicator computation
-  - Market regime detection
-  - Volatility analysis
-  - Volume profile analysis
+### 1. ML Model (models/ml_model.py)
+- Implements the machine learning model for price prediction
+- Handles model training, validation, and prediction
+- Includes custom metrics and loss functions
+- Manages model checkpointing and loading
 
-### 2. Model Layer (`models/`)
-- **MLModel**: Enhanced LSTM neural network
-  - Multi-head attention mechanism
-  - Residual connections
-  - Layer normalization
-  - Adaptive dropout for regularization
-  - Custom loss functions combining returns and directions
-  - Direction accuracy metrics
-  - Uncertainty estimation
-- **TechnicalModel**: Technical analysis system
-  - Traditional indicator calculations
-  - Pattern recognition
-  - Trend analysis
-  - Support/resistance detection
+### 2. Trading Strategy (strategies/ml_strategy.py)
+- Implements the ML-based trading strategy
+- Generates trading signals based on model predictions
+- Manages position sizing and risk management
+- Handles trade execution logic
 
-### 3. Strategy Layer (`strategies/`)
-- **MLTradingStrategy**: Hybrid trading logic
-  - ML prediction integration
-  - Technical confirmation
-  - Adaptive signal generation
-  - Dynamic position sizing
-  - Risk-adjusted trade execution
-  - Performance monitoring
-- **TechnicalStrategy**: Pure technical analysis
-  - Traditional indicator-based signals
-  - Pattern-based trading
-  - Trend following
-  - Mean reversion
+### 3. Data Management
+- Market data fetching and preprocessing
+- Feature engineering and sequence generation
+- Data validation and cleaning
+- Historical data management
 
-### 4. Configuration (`config/`)
-- **Config**: Centralized parameter management
-  - Model hyperparameters
-  - Trading parameters
-  - Risk management settings
-  - Logging configuration
-  - Environment settings
+### 4. Configuration Management
+- Trading parameters and thresholds
+- Model hyperparameters
+- Risk management settings
+- Environment configurations
 
-### 5. Utilities (`utils/`)
-- **Metrics**: Performance analysis
-  - Return calculations
-  - Risk metrics
-  - Trade statistics
-  - Portfolio analytics
-- **RiskManager**: Risk control system
-  - Position sizing
-  - Stop-loss management
-  - Exposure control
-  - Drawdown monitoring
+### 5. Logging and Monitoring
+- Trading activity logs
+- Model training metrics
+- Backtesting results
+- Error tracking and debugging
 
-### 6. Testing (`tests/`)
-- Comprehensive test suite
-  - Unit tests
-  - Integration tests
-  - Strategy backtests
-  - Performance validation
+## Key Features
 
-### 7. Logging System
-- Structured logging hierarchy
-  - Trading execution logs
-  - Model training logs
-  - Backtest results
-  - Error tracking
-  - Performance metrics
+1. Machine Learning Integration
+   - Deep learning model for price prediction
+   - Custom loss functions and metrics
+   - Model performance monitoring
 
-## Data Flow
-1. Data Collection
-   - Historical data fetching
-   - Real-time updates
-   - Market data validation
+2. Risk Management
+   - Position sizing rules
+   - Stop-loss mechanisms
+   - Portfolio exposure limits
+   - Risk-adjusted returns calculation
 
-2. Preprocessing
-   - Feature engineering
-   - Technical indicator calculation
-   - Sequence creation
-   - Data normalization
+3. Backtesting Framework
+   - Historical data simulation
+   - Performance metrics calculation
+   - Strategy optimization
+   - Transaction cost modeling
 
-3. Model Processing
-   - LSTM prediction
-   - Technical analysis
-   - Signal generation
-   - Uncertainty estimation
-
-4. Strategy Execution
-   - Signal validation
-   - Position sizing
-   - Trade execution
-   - Risk management
-
-5. Performance Monitoring
-   - Real-time tracking
-   - Portfolio analytics
-   - Risk metrics
-   - Trade logging
+4. Monitoring and Logging
+   - Real-time performance tracking
+   - Error detection and reporting
+   - Model training progress
+   - Trading signal generation logs
 
 ## Dependencies
-- TensorFlow 2.x for deep learning
-- pandas-ta for technical analysis
-- yfinance for market data
-- numpy for numerical operations
-- scikit-learn for preprocessing
-- matplotlib for visualization
 
-## Logging and Monitoring
-- Comprehensive logging system
-  - Execution logs
-  - Training metrics
-  - Backtest results
-  - Error tracking
-- Performance monitoring
-  - Real-time metrics
-  - Portfolio analytics
-  - Risk measures
-  - Trade statistics
+Major dependencies include:
+- TensorFlow for deep learning
+- Pandas for data manipulation
+- NumPy for numerical computations
+- Scikit-learn for preprocessing
+- Matplotlib/Seaborn for visualization
 
-## Future Enhancements
-1. Advanced ML Models
-   - Transformer architectures
-   - Reinforcement learning
-   - Ensemble methods
-   - Online learning
+## Development Guidelines
 
-2. Enhanced Risk Management
-   - Dynamic position sizing
-   - Adaptive stop-loss
-   - Portfolio optimization
-   - Risk parity
+1. Code Organization
+   - Modular design with clear separation of concerns
+   - Consistent naming conventions
+   - Comprehensive documentation
+   - Type hints and docstrings
 
-3. Market Analysis
-   - Sentiment analysis
-   - Market regime detection
-   - Correlation analysis
-   - Alternative data integration
+2. Testing
+   - Unit tests for core components
+   - Integration tests for workflows
+   - Performance benchmarks
+   - Data validation tests
 
-4. System Improvements
-   - Real-time processing
-   - Distributed computing
-   - API integration
-   - Web interface 
+3. Documentation
+   - API documentation
+   - Usage examples
+   - Architecture overview
+   - Setup instructions
+
+4. Version Control
+   - Feature branches
+   - Pull request reviews
+   - Version tagging
+   - Changelog maintenance 
