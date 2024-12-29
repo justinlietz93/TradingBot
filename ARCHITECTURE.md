@@ -1,129 +1,145 @@
 # Trading Bot Architecture
 
-## Project Structure
+## Project Overview
+The Trading Bot is a machine learning-based trading system that combines technical analysis with deep learning to generate trading signals and execute trades. The system is designed to be modular, scalable, and maintainable.
 
+## Directory Structure
 ```
 Trading_Bot/
-├── config/                      # Configuration files
-│   ├── config.yaml             # Main configuration file
-│   └── parameters.py           # Trading parameters and constants
-├── data/                       # Data storage
-│   └── market_data/           # Market data storage
-├── models/                     # ML models
-│   ├── ml_model.py            # Main ML model implementation
-│   └── checkpoints/           # Model checkpoints
-├── strategies/                 # Trading strategies
-│   ├── ml_strategy.py         # ML-based trading strategy
-│   └── backtest/              # Backtesting implementations
-├── utils/                     # Utility functions and helpers
-├── tests/                     # Test suite
-│   ├── test_data/            # Test data
-│   │   └── sample_data/      # Sample data for testing
-│   └── fixtures/             # Test fixtures
-├── logs/                      # Log files
-│   ├── trading/              # Trading logs
-│   ├── training/             # Model training logs
-│   ├── backtest/             # Backtesting logs
-│   └── errors/               # Error logs
-├── documentation/            # Documentation
-│   ├── api/                 # API documentation
-│   ├── examples/            # Usage examples
-│   └── images/              # Documentation images
-├── notebooks/               # Jupyter notebooks
-│   ├── analysis/           # Data analysis notebooks
-│   ├── research/           # Research and experimentation
-│   ├── visualization/      # Data visualization
-│   └── examples/           # Example notebooks
-├── requirements/           # Project dependencies
-│   └── requirements.txt    # Python package requirements
-└── scripts/               # Utility scripts
-    └── utils/            # Helper scripts
+├── backtesting/               # Backtesting engine and simulation
+│   ├── __init__.py
+│   └── backtester.py         # Core backtesting implementation
+├── config/                    # Configuration files
+│   ├── config.yaml           # Main configuration
+│   └── parameters.py         # Global parameters
+├── data/                     # Data management
+│   └── market_data/         # Historical market data
+├── documentation/           # Project documentation
+│   ├── api/                # API documentation
+│   ├── examples/           # Usage examples
+│   └── images/            # Documentation images
+├── logs/                   # Application logs
+│   ├── backtest/          # Backtesting logs
+│   ├── errors/            # Error logs
+│   ├── trading/           # Trading activity logs
+│   └── training/          # Model training logs
+├── models/                # ML model implementations
+│   ├── __init__.py
+│   ├── base_model.py     # Abstract base model class
+│   ├── ml_model.py       # Enhanced LSTM model implementation
+│   └── technical_model.py # Technical analysis model
+├── notebooks/            # Jupyter notebooks
+│   ├── analysis/        # Data analysis notebooks
+│   ├── examples/        # Example usage notebooks
+│   ├── research/        # Research and experimentation
+│   └── visualization/   # Data visualization
+├── requirements/        # Project dependencies
+│   └── requirements.txt # Package requirements
+├── scripts/            # Utility scripts
+│   └── utils/         # Helper utilities
+├── strategies/        # Trading strategies
+│   ├── __init__.py
+│   ├── ml_strategy.py # ML-based trading strategy
+│   └── backtest/      # Strategy backtesting
+├── tests/            # Test suite
+│   ├── fixtures/     # Test fixtures
+│   └── test_data/    # Test datasets
+├── utils/           # Utility functions
+├── main.py         # Main application entry
+├── run_backtest.py # Backtesting script
+└── parameters.py   # Global parameters
+```
 
 ## Core Components
 
-### 1. ML Model (models/ml_model.py)
-- Implements the machine learning model for price prediction
-- Handles model training, validation, and prediction
-- Includes custom metrics and loss functions
-- Manages model checkpointing and loading
+### 1. Machine Learning Model (models/ml_model.py)
+- Enhanced LSTM architecture with attention mechanisms
+- Multi-head attention for feature extraction
+- Parallel feature processing with global pooling
+- Custom loss functions for returns and direction prediction
+- Advanced training pipeline with comprehensive logging
+- Model checkpointing and performance monitoring
 
 ### 2. Trading Strategy (strategies/ml_strategy.py)
-- Implements the ML-based trading strategy
-- Generates trading signals based on model predictions
-- Manages position sizing and risk management
-- Handles trade execution logic
+- ML-based signal generation with technical confirmation
+- Enhanced risk management and position sizing
+- Multi-timeframe trend analysis
+- Volume and volatility filters
+- Adaptive thresholds based on market conditions
+- Detailed signal logging and performance tracking
 
-### 3. Data Management
-- Market data fetching and preprocessing
-- Feature engineering and sequence generation
-- Data validation and cleaning
-- Historical data management
+### 3. Backtesting Engine (backtesting/backtester.py)
+- Event-driven backtesting simulation
+- Position management and tracking
+- Risk metrics calculation
+- Performance analysis
+- Transaction cost modeling
+- Equity curve generation
 
-### 4. Configuration Management
-- Trading parameters and thresholds
+### 4. Configuration (config/)
+- Centralized parameter management
+- Environment-specific settings
+- Trading parameters
 - Model hyperparameters
 - Risk management settings
-- Environment configurations
-
-### 5. Logging and Monitoring
-- Trading activity logs
-- Model training metrics
-- Backtesting results
-- Error tracking and debugging
 
 ## Key Features
 
-1. Machine Learning Integration
-   - Deep learning model for price prediction
-   - Custom loss functions and metrics
-   - Model performance monitoring
+### Machine Learning Integration
+- Deep learning model for price prediction
+- Feature engineering pipeline
+- Real-time prediction capabilities
+- Model performance monitoring
+- Automated retraining
 
-2. Risk Management
-   - Position sizing rules
-   - Stop-loss mechanisms
-   - Portfolio exposure limits
-   - Risk-adjusted returns calculation
+### Risk Management
+- Position sizing based on risk
+- Stop-loss and take-profit management
+- Portfolio risk controls
+- Drawdown monitoring
+- Volatility-adjusted sizing
 
-3. Backtesting Framework
-   - Historical data simulation
-   - Performance metrics calculation
-   - Strategy optimization
-   - Transaction cost modeling
+### Backtesting Framework
+- Historical data simulation
+- Performance metrics calculation
+- Transaction cost modeling
+- Risk analysis
+- Strategy optimization
 
-4. Monitoring and Logging
-   - Real-time performance tracking
-   - Error detection and reporting
-   - Model training progress
-   - Trading signal generation logs
+### Monitoring and Logging
+- Comprehensive logging system
+- Performance tracking
+- Error monitoring
+- Model metrics logging
+- Trading activity logs
 
 ## Dependencies
-
-Major dependencies include:
-- TensorFlow for deep learning
-- Pandas for data manipulation
-- NumPy for numerical computations
-- Scikit-learn for preprocessing
-- Matplotlib/Seaborn for visualization
+- TensorFlow: Deep learning framework
+- Pandas: Data manipulation
+- NumPy: Numerical computations
+- Scikit-learn: Machine learning utilities
+- TA-Lib: Technical analysis
+- yfinance: Market data
+- Matplotlib: Visualization
 
 ## Development Guidelines
-
 1. Code Organization
-   - Modular design with clear separation of concerns
+   - Modular architecture
+   - Clear separation of concerns
    - Consistent naming conventions
    - Comprehensive documentation
-   - Type hints and docstrings
 
 2. Testing
    - Unit tests for core components
    - Integration tests for workflows
+   - Backtesting validation
    - Performance benchmarks
-   - Data validation tests
 
 3. Documentation
+   - Code comments
    - API documentation
    - Usage examples
-   - Architecture overview
-   - Setup instructions
+   - Architecture updates
 
 4. Version Control
    - Feature branches
