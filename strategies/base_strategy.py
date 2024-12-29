@@ -99,128 +99,112 @@ class BaseStrategy(ABC):
             return False
             
     def execute_trades(self, signals: pd.Series, data: pd.DataFrame) -> List[Dict]:
-        """Execute trades based on signals and update portfolio."""
+        """Execute trades based on signals and return trade history."""
         trades = []
+        current_position = None
         
-        try:
-            for i, signal in enumerate(signals):
-                price = data['close'].iloc[i]
-                volatility = data['volatility'].iloc[i]
-                
-                # Check stop loss/take profit for existing positions
-                for position in self.positions[:]:
-                    if self.check_stop_loss_take_profit(position, price):
-                        proceeds = position['size'] * price
-                        self.cash += proceeds
-                        self.positions.remove(position)
-                        trades.append({
-                            'date': data.index[i],
-                            'action': 'CLOSE',
-                            'size': position['size'],
-                            'price': price,
-                            'proceeds': proceeds,
-                            'reason': 'SL/TP'
-                        })
-                        logger.info(f"Position closed at ${price:.2f}, Portfolio: ${self.cash:.2f}")
-                
-                if signal == 1:  # Buy signal
-                    # Check if we have enough cash and are under position limit
-                    if len(self.positions) < self.max_positions:
-                        size = self.calculate_position_size(price, volatility)
-                        cost = size * price
-                        
-                        if cost <= self.cash and size > 0:
-                            self.cash -= cost
-                            self.positions.append({
-                                'size': size,
-                                'entry_price': price,
-                                'entry_date': data.index[i],
-                                'stop_loss': price * (1 - self.stop_loss_pct),
-                                'take_profit': price * (1 + self.take_profit_pct)
-                            })
-                            trades.append({
-                                'date': data.index[i],
-                                'action': 'BUY',
-                                'size': size,
-                                'price': price,
-                                'cost': cost
-                            })
-                            logger.info(f"Buy signal: {size} shares at ${price:.2f}, Portfolio: ${self.cash:.2f}")
-                            
-                            # Adjust stop loss and take profit based on volatility
-                            last_position = self.positions[-1]
-                            last_position['stop_loss'] = price * (1 - self.stop_loss_pct * (1 + volatility))
-                            last_position['take_profit'] = price * (1 + self.take_profit_pct * (1 - volatility))
-                            
-                elif signal == -1:  # Sell signal
-                    for position in self.positions[:]:
-                        proceeds = position['size'] * price
-                        self.cash += proceeds
-                        self.positions.remove(position)
-                        trades.append({
-                            'date': data.index[i],
-                            'action': 'SELL',
-                            'size': position['size'],
-                            'price': price,
-                            'proceeds': proceeds
-                        })
-                        logger.info(f"Sell signal: {position['size']} shares at ${price:.2f}, Portfolio: ${self.cash:.2f}")
-                        
-            return trades
+        for i in range(len(signals)):
+            price = data['close'].iloc[i]
+            date = data.index[i]
+            signal = signals.iloc[i]
             
-        except Exception as e:
-            logger.error(f"Error executing trades: {str(e)}")
-            return trades
-    
+            # Close position if we have a sell signal or hit stop loss/take profit
+            if current_position is not None:
+                entry_price = current_position['entry_price']
+                position_type = current_position['type']
+                
+                # Calculate returns
+                if position_type == 'long':
+                    returns = (price - entry_price) / entry_price
+                else:  # short
+                    returns = (entry_price - price) / entry_price
+                
+                # Check if we should close the position
+                should_close = (
+                    (signal == -1 and position_type == 'long') or
+                    (signal == 1 and position_type == 'short') or
+                    (returns <= -self.stop_loss_pct) or
+                    (returns >= self.take_profit_pct)
+                )
+                
+                if should_close:
+                    current_position['exit_price'] = price
+                    current_position['exit_date'] = date
+                    current_position['returns'] = returns
+                    trades.append(current_position)
+                    current_position = None
+            
+            # Open new position if we have a signal and no current position
+            if current_position is None and signal != 0:
+                position_type = 'long' if signal == 1 else 'short'
+                volatility = data['volatility'].iloc[i] if 'volatility' in data.columns else 0.01
+                position_size = self.calculate_position_size(price, volatility)
+                
+                current_position = {
+                    'type': position_type,
+                    'entry_price': price,
+                    'entry_date': date,
+                    'size': position_size
+                }
+        
+        # Close any remaining position at the end
+        if current_position is not None:
+            price = data['close'].iloc[-1]
+            entry_price = current_position['entry_price']
+            position_type = current_position['type']
+            
+            if position_type == 'long':
+                returns = (price - entry_price) / entry_price
+            else:  # short
+                returns = (entry_price - price) / entry_price
+            
+            current_position['exit_price'] = price
+            current_position['exit_date'] = data.index[-1]
+            current_position['returns'] = returns
+            trades.append(current_position)
+        
+        return trades
+
     def calculate_metrics(self, trades: List[Dict], final_price: float) -> Dict:
         """Calculate trading performance metrics."""
-        try:
-            metrics = {}
-            
-            # Basic metrics
-            metrics['total_trades'] = len(trades)
-            metrics['final_cash'] = self.cash
-            metrics['positions'] = len(self.positions)
-            
-            # Calculate final portfolio value
-            portfolio_value = self.cash + sum(pos['size'] * final_price for pos in self.positions)
-            metrics['portfolio_value'] = portfolio_value
-            
-            # Calculate returns
-            initial_capital = self.config.trading.initial_capital
-            total_return = (portfolio_value - initial_capital) / initial_capital
-            metrics['total_return'] = total_return
-            
-            if trades:
-                # Win rate
-                profitable_trades = sum(1 for t in trades if t.get('proceeds', 0) > t.get('cost', 0))
-                metrics['win_rate'] = profitable_trades / len(trades)
-                
-                # Calculate profit/loss for each trade
-                trade_returns = []
-                for trade in trades:
-                    if trade['action'] == 'SELL' or trade['action'] == 'CLOSE':
-                        trade_return = (trade['proceeds'] - trade.get('cost', 0)) / trade.get('cost', 1)
-                        trade_returns.append(trade_return)
-                
-                if trade_returns:
-                    # Average return per trade
-                    metrics['avg_trade_return'] = np.mean(trade_returns)
-                    
-                    # Sharpe ratio (assuming risk-free rate of 0.02)
-                    excess_returns = np.array(trade_returns) - 0.02
-                    if len(excess_returns) > 1:
-                        sharpe_ratio = np.sqrt(252) * np.mean(excess_returns) / np.std(excess_returns)
-                        metrics['sharpe_ratio'] = sharpe_ratio
-                    
-                    # Maximum drawdown
-                    cumulative_returns = np.cumprod(1 + np.array(trade_returns))
-                    running_max = np.maximum.accumulate(cumulative_returns)
-                    drawdowns = (running_max - cumulative_returns) / running_max
-                    metrics['max_drawdown'] = np.max(drawdowns)
-            
-            return metrics
-            
-        except Exception as e:
-            logger.error(f"Error calculating metrics: {str(e)}")
-            return {}
+        if not trades:
+            return {
+                'total_trades': 0,
+                'win_rate': 0.0,
+                'avg_return': 0.0,
+                'max_drawdown': 0.0,
+                'sharpe_ratio': 0.0,
+                'total_return': 0.0
+            }
+        
+        # Calculate basic metrics
+        total_trades = len(trades)
+        winning_trades = sum(1 for trade in trades if trade['returns'] > 0)
+        win_rate = winning_trades / total_trades if total_trades > 0 else 0
+        
+        # Calculate returns
+        returns = [trade['returns'] for trade in trades]
+        avg_return = np.mean(returns)
+        total_return = np.prod([1 + r for r in returns]) - 1
+        
+        # Calculate Sharpe ratio (assuming risk-free rate of 0)
+        if len(returns) > 1:
+            returns_std = np.std(returns)
+            sharpe_ratio = np.sqrt(252) * (avg_return / returns_std) if returns_std > 0 else 0
+        else:
+            sharpe_ratio = 0
+        
+        # Calculate maximum drawdown
+        cumulative_returns = np.cumprod([1 + r for r in returns])
+        running_max = np.maximum.accumulate(cumulative_returns)
+        drawdowns = (running_max - cumulative_returns) / running_max
+        max_drawdown = np.max(drawdowns) if len(drawdowns) > 0 else 0
+        
+        return {
+            'total_trades': total_trades,
+            'win_rate': win_rate,
+            'avg_return': avg_return,
+            'max_drawdown': max_drawdown,
+            'sharpe_ratio': sharpe_ratio,
+            'total_return': total_return
+        }

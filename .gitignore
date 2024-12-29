@@ -4,6 +4,7 @@
 
 # Log files
 /logs/
+/models/checkpoints/
 
 # Compiled Python files
 *.pyc
@@ -21,6 +22,7 @@ build/
 .idea/
 *.sublime-project
 *.sublime-workspace
+*.cursorrules
 
 # Data files
 *.csv
