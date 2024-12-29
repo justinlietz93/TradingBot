@@ -1,9 +1,11 @@
 # Virtual environment
-/trading_env/
+/trading_env/*
 /venv/
 
 # Log files
-/logs/
+/logs/*
+/models/checkpoints/*
+*.log
 
 # Compiled Python files
 *.pyc
@@ -21,6 +23,8 @@ build/
 .idea/
 *.sublime-project
 *.sublime-workspace
+*.cursorrules
+memory.json
 
 # Data files
 *.csv

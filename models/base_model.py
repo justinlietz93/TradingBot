@@ -100,11 +100,9 @@ class BaseModel(ABC):
         return True
     
     def get_model_summary(self) -> str:
-        """Get a string summary of the model architecture."""
         try:
-            if hasattr(self.model, 'summary'):
-                return str(self.model.summary())
-            return "Model summary not available"
+            string_list = []
+            self.model.summary(print_fn=lambda x: string_list.append(x))
+            return '\n'.join(string_list)
         except Exception as e:
-            logger.error(f"Error getting model summary: {str(e)}")
-            return "Error getting model summary"
+            return f"Error getting model summary: {str(e)}"

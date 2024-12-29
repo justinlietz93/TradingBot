@@ -1,324 +1,346 @@
 # Machine learning model implementation
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, GRU, Bidirectional, Input, Attention, LayerNormalization
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import LSTM, Dense, Dropout, LayerNormalization, Input, MultiHeadAttention, GlobalAveragePooling1D
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from typing import Dict, List, Optional, Union, Tuple
-import numpy as np
+from typing import Tuple, Dict, Any
 import logging
-from .base_model import BaseModel
+import numpy as np
+from datetime import datetime
+import os
+from pathlib import Path
 
-class MLModel(BaseModel):
-    def __init__(self, config: 'Config'):
-        try:
-            super().__init__(config)
-            self.model_type = config.model.model_type
-            self.epochs = config.model.epochs
-            self.batch_size = config.model.batch_size
-            self.lookback_period = config.model.lookback_period
-            self.build_model()
-        except Exception as e:
-            logger.exception("Error initializing MLModel")
-            raise e
+logger = logging.getLogger(__name__)
+
+class MLModel:
+    """Enhanced LSTM model for financial time series prediction."""
+    def __init__(self, input_shape: Tuple[int, int], horizon: int, config=None):
+        self.input_shape = input_shape
+        self.horizon = horizon
+        self.output_shape = horizon * 2  # Changed to match the target shape (returns and directions)
+        self.config = config or Config.get_default_config().model
         
-    def build_model(self) -> None:
-        """Build and compile the model based on configuration."""
-        try:
-            input_shape = (self.lookback_period, len(self.config.model.features))
+        # Build the model
+        self.model = self._build_model(input_shape, self.output_shape)
+        self.history = None
+        
+    def _build_model(self, input_shape: Tuple[int, ...], output_shape: int) -> Model:
+        """Build the LSTM model architecture with enhanced attention and feature extraction."""
+        inputs = Input(shape=input_shape, name='input_layer')
+        
+        # Normalize input
+        x = LayerNormalization()(inputs)
+        
+        # LSTM blocks with residual connections
+        lstm_units = self.config['lstm_units']
+        attention_heads = self.config['attention_heads']
+        key_dim = self.config['attention_key_dim']
+        
+        for i, (units, heads) in enumerate(zip(lstm_units, attention_heads)):
+            # LSTM layer
+            lstm = LSTM(units, return_sequences=True)(x)
+            lstm = LayerNormalization()(lstm)
             
-            if self.model_type == 'lstm':
-                self.model = self._build_lstm_model(input_shape)
-            elif self.model_type == 'gru':
-                self.model = self._build_gru_model(input_shape)
-            elif self.model_type == 'transformer':
-                self.model = self._build_transformer_model(input_shape)
-            else:
-                raise ValueError(f"Unknown model type: {self.model_type}")
-            
-            # Use fixed learning rate from config
-            self.model.compile(
-                optimizer=Adam(learning_rate=self.config.model.learning_rate),
-                loss=self._custom_loss,
-                metrics=['mae', self._direction_accuracy]
-            )
-            
-            logger.info(f"Built {self.model_type.upper()} model")
-            logger.info(self.get_model_summary())
-            
-        except Exception as e:
-            logger.error(f"Error building model: {str(e)}")
-            raise
-            
-    def _build_lstm_model(self, input_shape: tuple) -> tf.keras.Model:
-        model = Sequential()
+            # Multi-head attention
+            attention = MultiHeadAttention(num_heads=heads, key_dim=key_dim)(lstm, lstm)
+            x = tf.keras.layers.Add()([lstm, attention])
+            x = Dropout(self.config['dropout_rate'])(x)
         
-        # First LSTM layer with input_shape=(timesteps, features)
-        model.add(LSTM(64, input_shape=(self.config.model.lookback_period, 12), return_sequences=True, name="lstm"))
-        model.add(LayerNormalization(name="layer_normalization"))
-        model.add(Dropout(0.2, name="dropout"))
+        # Final LSTM layer
+        lstm_final = LSTM(lstm_units[-1], return_sequences=True)(x)
+        lstm_final = LayerNormalization()(lstm_final)
         
-        # Second LSTM layer returns sequences
-        model.add(LSTM(64, return_sequences=True, name="lstm_1"))
-        model.add(LayerNormalization(name="layer_normalization_1"))
-        model.add(Dropout(0.2, name="dropout_1"))
+        # Parallel feature extraction
+        avg_pool = GlobalAveragePooling1D()(lstm_final)
+        max_pool = tf.keras.layers.GlobalMaxPooling1D()(lstm_final)
         
-        # Third LSTM layer, returns final state
-        model.add(LSTM(64, name="lstm_2"))
-        model.add(LayerNormalization(name="layer_normalization_2"))
-        model.add(Dropout(0.2, name="dropout_2"))
+        # Combine features
+        x = tf.keras.layers.Concatenate()([avg_pool, max_pool])
         
-        # Dense layers
-        model.add(Dense(128, activation='relu', name="dense"))
-        model.add(Dense(64, activation='relu', name="dense_1"))
-        model.add(Dropout(0.2, name="dropout_3"))
+        # Dense layers with residual connections
+        dense_units = self.config['dense_units']
+        dense_layers = []
         
-        # Final output layer for 12 signals (or however many outputs you need)
-        model.add(Dense(self.config.model.prediction_horizon, activation='linear', name="dense_2"))
+        for units in dense_units:
+            dense = Dense(units, activation='relu')(x)
+            dense = LayerNormalization()(dense)
+            dense = Dropout(self.config['dropout_rate'])(dense)
+            dense_layers.append(dense)
+            x = dense
         
-        model.compile(optimizer='adam', loss='mse')
+        # Skip connections
+        concat = tf.keras.layers.Concatenate()(dense_layers)
+        
+        # Split into returns and directions branches
+        returns_branch = Dense(128, activation='relu')(concat)
+        returns_branch = LayerNormalization()(returns_branch)
+        returns_branch = Dropout(self.config['dropout_rate'])(returns_branch)
+        returns_output = Dense(self.horizon, activation='linear', name='returns_output')(returns_branch)
+        
+        directions_branch = Dense(128, activation='relu')(concat)
+        directions_branch = LayerNormalization()(directions_branch)
+        directions_branch = Dropout(self.config['dropout_rate'])(directions_branch)
+        directions_output = Dense(self.horizon, activation='tanh', name='directions_output')(directions_branch)
+        
+        # Combine outputs
+        outputs = tf.keras.layers.Concatenate()([returns_output, directions_output])
+        
+        model = Model(inputs=inputs, outputs=outputs)
+        
+        # Custom optimizer with gradient clipping
+        optimizer = Adam(
+            learning_rate=self.config['learning_rate'],
+            clipnorm=1.0
+        )
+        
+        model.compile(
+            optimizer=optimizer,
+            loss=self.combined_loss,
+            metrics=['mae', self.direction_accuracy]
+        )
+        
+        logger.info("Built enhanced LSTM model with improved feature extraction")
+        model.summary(print_fn=logger.info)
+        
         return model
         
-    def _build_gru_model(self, input_shape: tuple) -> Sequential:
-        """Build a GRU model with bidirectional layers."""
-        model = Sequential([
-            Input(shape=input_shape),
-            Bidirectional(GRU(units=64, return_sequences=True)),
-            LayerNormalization(),
-            Dropout(0.2),
-            Bidirectional(GRU(units=32, return_sequences=False)),
-            LayerNormalization(),
-            Dropout(0.2),
-            Dense(self.config.model.prediction_horizon)
-        ])
-        return model
+    def direction_accuracy(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """Calculate direction prediction accuracy."""
+        # Split predictions and true values into returns and directions
+        pred_returns = y_pred[:, :self.horizon]
+        true_returns = y_true[:, :self.horizon]
+        pred_directions = y_pred[:, self.horizon:]
+        true_directions = y_true[:, self.horizon:]
         
-    def _build_transformer_model(self, input_shape: tuple) -> Sequential:
-        """Build a Transformer model."""
-        model = Sequential([
-            Input(shape=input_shape),
-            # Add transformer layers here
-            Dense(self.config.model.prediction_horizon)
-        ])
-        return model
+        # Calculate direction accuracy from both returns and explicit directions
+        returns_direction_acc = tf.reduce_mean(tf.cast(tf.equal(tf.sign(pred_returns), tf.sign(true_returns)), tf.float32))
+        explicit_direction_acc = tf.reduce_mean(tf.cast(tf.equal(tf.sign(pred_directions), tf.sign(true_directions)), tf.float32))
         
-    def train(self, X_train, y_train, X_val=None, y_val=None):
-        """Train the ML model."""
+        # Return the average of both accuracies
+        return (returns_direction_acc + explicit_direction_acc) / 2.0
+        
+    def _returns_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """Custom loss function for returns prediction."""
+        # Extract returns from the combined target
+        true_returns = y_true[:, :self.horizon]
+        pred_returns = y_pred[:, :self.horizon]
+        return tf.keras.losses.huber(true_returns, pred_returns)
+    
+    def _directions_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """Custom loss function for directions prediction."""
+        # Extract directions from the combined target
+        true_directions = y_true[:, self.horizon:]
+        pred_directions = y_pred[:, self.horizon:]
+        return tf.keras.losses.binary_crossentropy(
+            tf.nn.sigmoid(true_directions),
+            tf.nn.sigmoid(pred_directions)
+        )
+    
+    def combined_loss(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """Combined loss function for both returns and directions."""
+        returns_loss = self._returns_loss(y_true, y_pred)
+        directions_loss = self._directions_loss(y_true, y_pred)
+        return returns_loss + directions_loss
+    
+    def train(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray = None, y_val: np.ndarray = None, epochs: int = None, batch_size: int = None) -> Dict[str, list]:
+        """Train the model with enhanced validation and monitoring."""
         try:
-            logger.info(f"Training model with {len(X_train)} samples for {self.epochs} epochs")
-
-            # Debugging: Print input data shapes and other information
-            logger.debug(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape if y_train is not None else None}")
-            logger.debug(f"X_val shape: {X_val.shape if X_val is not None else None}, y_val shape: {y_val.shape if y_val is not None else None}")
+            # Use config values if not provided
+            epochs = epochs or self.config['epochs']
+            batch_size = batch_size or self.config['batch_size']
             
-            logger.debug(f"X_train columns: {X_train.columns}")
-            logger.debug(f"X_train head: {X_train.head()}")
-            logger.debug(f"X_train tail: {X_train.tail()}")
-            logger.debug(f"X_train info: {X_train.info()}")
-            logger.debug(f"X_train describe: {X_train.describe()}")
-            logger.debug(f"X_train dtypes: {X_train.dtypes}")
-            logger.debug(f"X_train index: {X_train.index}")
-            logger.debug(f"X_train values: {X_train.values}")
-
-            # Reshape input data to 3D format (samples, timesteps, features)
-            num_samples = X_train.shape[0]
-            num_features = X_train.shape[1]
-            num_timesteps = num_samples // self.lookback_period
+            # Validate input shapes
+            if len(X_train.shape) != 3:
+                raise ValueError(f"X_train must be 3D (samples, timesteps, features), got shape {X_train.shape}")
+            if len(y_train.shape) != 2:
+                raise ValueError(f"y_train must be 2D (samples, targets), got shape {y_train.shape}")
             
-            # Truncate data to fit the desired shape
-            X_train = X_train[:num_timesteps*self.lookback_period]
-            X_train = X_train.values.reshape((num_timesteps, self.lookback_period, num_features))
+            # Validate target shape
+            if y_train.shape[1] != self.horizon * 2:
+                raise ValueError(f"y_train must have shape (samples, {self.horizon * 2}), got shape {y_train.shape}")
             
-            if y_train is not None:
-                y_train = y_train[:num_timesteps]
-            else:
-                y_train = None
+            # Validate matching samples
+            if len(X_train) != len(y_train):
+                raise ValueError(f"X_train and y_train must have same number of samples. Got {len(X_train)} vs {len(y_train)}")
             
-            if X_val is not None:
-                num_val_samples = X_val.shape[0]
-                num_val_timesteps = num_val_samples // self.lookback_period
-                X_val = X_val[:num_val_timesteps*self.lookback_period]
-                X_val = X_val.values.reshape((num_val_timesteps, self.lookback_period, X_val.shape[1]))
-                
-                if y_val is not None:
-                    y_val = y_val[:num_val_timesteps]
-                else:
-                    y_val = None
-            
-            # Debugging: Print model input shape
-            logger.debug(f"Model input shape: {(X_train.shape[1], X_train.shape[2])}")
-            
-            # Log training configurations
-            logger.info(f"Epochs: {self.epochs}, Batch Size: {self.batch_size}")
-            logger.info(f"Validation Data: {'Provided' if X_val is not None and y_val is not None else 'Not Provided'}")
-            
-            callbacks = [
-                EarlyStopping(
-                    monitor='val_loss',
-                    patience=20,
-                    restore_best_weights=True,
-                    min_delta=1e-5
-                ),
-                ReduceLROnPlateau(
-                    monitor='val_loss',
-                    factor=0.1,
-                    patience=5,
-                    min_lr=1e-7,
-                    min_delta=1e-5
-                ),
-                tf.keras.callbacks.ModelCheckpoint(
-                    'logs/best_model.keras',
-                    monitor='val_loss',
-                    save_best_only=True,
-                    save_weights_only=False
-                )
-            ]
-            
+            # Validate validation data if provided
             if X_val is not None and y_val is not None:
-                validation_data = (X_val, y_val)
-            else:
-                validation_data = None
-                callbacks = callbacks[:2]  # Remove ModelCheckpoint if no validation data
+                if X_val.shape[1:] != X_train.shape[1:]:
+                    raise ValueError(f"X_val must have same shape as X_train except for samples dimension")
+                if y_val.shape[1:] != y_train.shape[1:]:
+                    raise ValueError(f"y_val must have same shape as y_train except for samples dimension")
             
-            history = self.model.fit(
-                X_train, y_train,
-                epochs=self.epochs,
-                batch_size=self.batch_size,
-                validation_data=validation_data,
-                callbacks=callbacks,
-                verbose=1
-            )
+            logger.info(f"Starting training with configuration:")
+            logger.info(f"  Training samples: {len(X_train)}")
+            logger.info(f"  Validation samples: {len(X_val) if X_val is not None else 'None'}")
+            logger.info(f"  Timesteps: {X_train.shape[1]}")
+            logger.info(f"  Features: {X_train.shape[2]}")
+            logger.info(f"  Target shape: {y_train.shape[1]} (returns and directions)")
+            logger.info(f"  Batch size: {batch_size}")
+            logger.info(f"  Epochs: {epochs}")
             
-            self.is_trained = True
-            return history.history
+            # Create base directories using pathlib.Path
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            root_dir = Path(r"C:\Users\jliet\source\repos\Python\Python Projects\Trading_Bot")
+            
+            # Create directory paths using pathlib.Path
+            logs_dir = root_dir / 'logs'
+            training_dir = logs_dir / 'training' / timestamp
+            checkpoints_dir = root_dir / 'models' / 'checkpoints' / timestamp
+            tensorboard_dir = training_dir / 'tensorboard'
+            
+            # Create all directories
+            logs_dir.mkdir(exist_ok=True)
+            training_dir.mkdir(parents=True, exist_ok=True)
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            tensorboard_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"Created directories:")
+            logger.info(f"  Logs: {logs_dir}")
+            logger.info(f"  Training: {training_dir}")
+            logger.info(f"  Checkpoints: {checkpoints_dir}")
+            logger.info(f"  TensorBoard: {tensorboard_dir}")
+            
+            # Configure file logging
+            log_file = training_dir / "training.log"
+            file_handler = logging.FileHandler(log_file, encoding='utf-8', errors='replace')
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            logger.addHandler(file_handler)
+            
+            try:
+                # Enhanced callbacks with improved logging
+                callbacks = [
+                    EarlyStopping(
+                        monitor='val_loss' if X_val is not None else 'loss',
+                        patience=self.config['early_stopping_patience'],
+                        restore_best_weights=True,
+                        mode='min',
+                        verbose=1
+                    ),
+                    ReduceLROnPlateau(
+                        monitor='val_loss' if X_val is not None else 'loss',
+                        factor=0.5,
+                        patience=self.config['reduce_lr_patience'],
+                        min_lr=self.config['min_lr'],
+                        mode='min',
+                        verbose=1
+                    ),
+                    tf.keras.callbacks.CSVLogger(
+                        str(training_dir / 'training_metrics.csv'),
+                        separator=',',
+                        append=True
+                    ),
+                    tf.keras.callbacks.ModelCheckpoint(
+                        filepath=str(checkpoints_dir / 'model-{epoch:02d}-{val_loss:.4f}.keras'),
+                        monitor='val_loss' if X_val is not None else 'loss',
+                        save_best_only=True,
+                        save_weights_only=False,
+                        mode='min',
+                        verbose=1
+                    ),
+                    tf.keras.callbacks.TensorBoard(
+                        log_dir=str(tensorboard_dir),
+                        histogram_freq=1,
+                        write_graph=True,
+                        write_images=True,
+                        update_freq='epoch',
+                        profile_batch=0
+                    )
+                ]
+                
+                # Save model architecture
+                try:
+                    with open(checkpoints_dir / 'model_architecture.json', 'w', encoding='utf-8') as f:
+                        f.write(self.model.to_json())
+                    logger.info(f"Saved initial model architecture to {checkpoints_dir / 'model_architecture.json'}")
+                except Exception as e:
+                    logger.warning(f"Could not save model architecture: {str(e)}")
+
+                logger.info(f"Training {'with provided validation data' if X_val is not None else 'without validation data'}. Logs will be saved to {training_dir}")
+
+                # Train the model
+                history = self.model.fit(
+                    X_train, y_train,
+                    validation_data=(X_val, y_val) if X_val is not None else None,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    callbacks=callbacks,
+                    verbose=1
+                )
+
+                if history is None:
+                    logger.error("Model training failed: fit() returned None")
+                    return None
+
+                # Log training results
+                final_epoch = len(history.history['loss'])
+                best_epoch = np.argmin(history.history['val_loss' if X_val is not None else 'loss']) + 1
+
+                logger.info(f"Training completed after {final_epoch} epochs")
+                logger.info(f"Final training loss: {history.history['loss'][-1]:.4f}")
+                if X_val is not None:
+                    logger.info(f"Final validation loss: {history.history['val_loss'][-1]:.4f}")
+                logger.info(f"Best model found at epoch {best_epoch}")
+                logger.info(f"Best training loss: {min(history.history['loss']):.4f}")
+                if X_val is not None:
+                    logger.info(f"Best validation loss: {min(history.history['val_loss']):.4f}")
+
+                # Save training history
+                try:
+                    history_file = training_dir / 'training_history.npy'
+                    np.save(history_file, history.history)
+                    logger.info(f"Training history saved to {history_file}")
+                except Exception as e:
+                    logger.warning(f"Could not save training history: {str(e)}")
+
+                # Save final model
+                try:
+                    final_model_path = checkpoints_dir / 'final_model.keras'
+                    self.model.save(final_model_path)
+                    logger.info(f"Final model saved to {final_model_path}")
+                except Exception as e:
+                    logger.warning(f"Could not save final model: {str(e)}")
+
+                return history.history
+
+            except Exception as e:
+                logger.error(f"Error during training: {str(e)}")
+                return None
+
+            finally:
+                # Clean up file handler
+                logger.removeHandler(file_handler)
+                file_handler.close()
             
         except Exception as e:
-            logger.error(f"Error training model: {str(e)}")
-            raise e
-        
+            logger.error(f"Error during training: {str(e)}")
+            return None
+            
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions with uncertainty estimation."""
+        """Generate predictions for the input data."""
         try:
-            # Validate input data
-            is_valid, message = self.validate_data(X)
-            if not is_valid:
-                raise ValueError(message)
-                
-            if not self.check_is_trained():
-                raise ValueError("Model must be trained before making predictions")
-                
-            # Make predictions with Monte Carlo Dropout
-            predictions = []
-            for _ in range(10):  # Number of Monte Carlo samples
-                pred = self.model(X, training=True)  # Enable dropout during inference
-                predictions.append(pred)
-                
-            # Calculate mean and standard deviation
-            predictions = np.stack(predictions)
-            mean_pred = np.mean(predictions, axis=0)
-            std_pred = np.std(predictions, axis=0)
+            # Make predictions
+            predictions = self.model.predict(X, verbose=0)
             
-            # Add uncertainty information to the predictions
-            return mean_pred, std_pred
+            # Log prediction shapes and statistics
+            logger.info(f"Generated predictions with shape: {predictions.shape}")
+            
+            # Split predictions into returns and directions
+            returns = predictions[:, :self.horizon]
+            directions = predictions[:, self.horizon:]
+            
+            # Log prediction statistics
+            logger.info("Prediction statistics:")
+            logger.info(f"  Returns - Mean: {returns.mean():.4f}, Std: {returns.std():.4f}")
+            logger.info(f"  Directions - Mean: {directions.mean():.4f}, Std: {directions.std():.4f}")
+            
+            # Combine predictions
+            combined_predictions = np.concatenate([returns, directions], axis=1)
+            
+            return combined_predictions
             
         except Exception as e:
-            logger.error(f"Error making predictions: {str(e)}")
+            logger.error(f"Error during prediction: {str(e)}")
             raise
-            
-    def evaluate(self, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, float]:
-        """Evaluate the model with detailed metrics."""
-        try:
-            if not self.check_is_trained():
-                raise ValueError("Model must be trained before evaluation")
-                
-            # Get predictions with uncertainty
-            y_pred, y_std = self.predict(X_test)
-            
-            # Calculate metrics
-            metrics = {}
-            
-            # Basic metrics
-            metrics.update(self.model.evaluate(X_test, y_test, return_dict=True))
-            
-            # Direction accuracy
-            pred_direction = np.sign(y_pred)
-            true_direction = np.sign(y_test)
-            metrics['direction_accuracy'] = np.mean(pred_direction == true_direction)
-            
-            # Uncertainty metrics
-            metrics['mean_uncertainty'] = np.mean(y_std)
-            metrics['max_uncertainty'] = np.max(y_std)
-            
-            # Custom metrics for financial predictions
-            metrics['rmse'] = np.sqrt(np.mean((y_pred - y_test) ** 2))
-            metrics['mape'] = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
-            
-            return metrics
-            
-        except Exception as e:
-            logger.error(f"Error evaluating model: {str(e)}")
-            raise
-        
-    def _custom_loss(self, y_true, y_pred):
-        """Custom loss function combining MSE and directional accuracy with return optimization."""
-        # MSE component using tf.keras backend
-        mse_loss = tf.reduce_mean(tf.square(y_true - y_pred))
-        
-        # Direction component
-        direction_true = tf.sign(y_true)
-        direction_pred = tf.sign(y_pred)
-        direction_loss = tf.cast(tf.not_equal(direction_true, direction_pred), tf.float32)
-        
-        # Return magnitude component - penalize more for missing big moves
-        return_magnitude = tf.abs(y_true)
-        magnitude_loss = tf.reduce_mean(return_magnitude * tf.square(y_true - y_pred))
-        
-        # Combine losses with weighting
-        return mse_loss + 0.2 * direction_loss + 0.3 * magnitude_loss
-        
-    def _direction_accuracy(self, y_true, y_pred):
-        """Calculate directional accuracy metric."""
-        direction_true = tf.sign(y_true)
-        direction_pred = tf.sign(y_pred)
-        return tf.reduce_mean(tf.cast(tf.equal(direction_true, direction_pred), tf.float32))
-
-    def validate_data(self, X: np.ndarray, y: np.ndarray = None) -> tuple:
-        """Validate input data."""
-        try:
-            if len(X.shape) != 3:
-                return False, "Input data must be 3-dimensional (samples, timesteps, features)"
-            
-            if X.shape[1] != self.config.model.lookback_period:
-                return False, f"Input timesteps must be {self.config.model.lookback_period}"
-            
-            if X.shape[2] != len(self.config.model.features):
-                return False, f"Input features must be {len(self.config.model.features)}"
-            
-            if y is not None:
-                if len(y.shape) != 2:
-                    return False, "Target data must be 2-dimensional (samples, prediction_horizon)"
-                
-                if y.shape[0] != X.shape[0]:
-                    return False, "Number of samples must match between X and y"
-                
-                if y.shape[1] != self.config.model.prediction_horizon:
-                    return False, f"Target horizon must be {self.config.model.prediction_horizon}"
-                
-            return True, "Data validation successful"
-            
-        except Exception as e:
-            return False, f"Data validation error: {str(e)}"
-
-    def check_is_trained(self) -> bool:
-        """Check if the model has been trained."""
-        return hasattr(self, 'is_trained') and self.is_trained
-
-    def get_model_summary(self) -> str:
-        """Get model summary as string."""
-        try:
-            string_list = []
-            self.model.summary(print_fn=lambda x: string_list.append(x))
-            summary_str = '\n'.join(string_list)
-            return summary_str.encode('ascii', 'ignore').decode('ascii')
-        except Exception as e:
-            return f"Error getting model summary: {str(e)}"

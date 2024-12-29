@@ -1,298 +1,383 @@
-import pandas as pd
+"""
+Data loading and preprocessing functionality.
+"""
 import numpy as np
-from typing import List, Tuple
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
-from scipy.stats import zscore
+import pandas as pd
 import yfinance as yf
 import logging
-from config.config import Config
+import pandas_ta as ta
+from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 class DataLoader:
-    def __init__(self, tickers, start_date, end_date):
-        self.config = Config.get_default_config()
+    """Class for loading and preprocessing financial data."""
+    def __init__(self, tickers: List[str], start_date: str, end_date: str):
         self.tickers = tickers
         self.start_date = start_date
         self.end_date = end_date
-        self.scalers = {}
-        self.original_data = None
+        self.data = {}
 
-        logger.info(f"[DEBUG] DataLoader initialized with config: {self.config}")
-        logger.info(f"[DEBUG] DataLoader initialized with tickers: {self.tickers}")
-        logger.info(f"[DEBUG] DataLoader initialized with start_date: {self.start_date}")
-        logger.info(f"[DEBUG] DataLoader initialized with end_date: {self.end_date}")
-        
-    def fetch_data(self):
-        data = {}
+    def load_data(self) -> Dict[str, pd.DataFrame]:
+        """Load data for all tickers."""
         for ticker in self.tickers:
-            ticker_data = yf.download(ticker, start=self.start_date, end=self.end_date)
-            
-            # Reset the index to remove the MultiIndex structure
-            ticker_data.reset_index(inplace=True)
-            
-            # Flatten the columns by removing the ticker level
-            ticker_data.columns = ticker_data.columns.droplevel(1)
-            
-            # Rename columns to lowercase for consistency
-            ticker_data.columns = [col.lower() for col in ticker_data.columns]
-            
-            # Ensure 'close' column is present
-            if 'close' not in ticker_data.columns:
-                raise ValueError(f"'close' column not found in data for {ticker}")
-            
-            logger.info(f"[DEBUG] Columns before preprocessing: {ticker_data.columns}")
-            X, y = self.preprocess_data(ticker_data, lookback_period=60)
-            
-            if X is None or y is None:
-                logger.warning(f"Skipping {ticker} due to preprocessing failure")
+            try:
+                logger.info(f"Loading data for {ticker}...")
+                stock = yf.Ticker(ticker)
+                df = stock.history(start=self.start_date, end=self.end_date, interval='1d')
+                
+                if df.empty:
+                    logger.error(f"No data found for {ticker}")
+                    continue
+                    
+                logger.info(f"Successfully loaded {len(df)} samples for {ticker}")
+                self.data[ticker] = self.preprocess_data(df, ticker)
+                
+                # Verify data size after preprocessing
+                if len(self.data[ticker]) < 1000:
+                    logger.warning(f"Insufficient data for {ticker} after preprocessing. Got {len(self.data[ticker])} samples, need at least 1000.")
+                    del self.data[ticker]
+                    continue
+                
+            except Exception as e:
+                logger.error(f"Error loading data for {ticker}: {str(e)}")
                 continue
+                
+        if not self.data:
+            raise ValueError("No valid data loaded for any ticker")
             
-            # Store the 3D sequences directly without flattening
-            data[ticker] = {'X': X, 'y': y}
-        
-        if not data:
-            raise ValueError("No valid data after preprocessing")
-        
-        return data
+        return self.data
 
-    def preprocess_data(self, data, lookback_period):
-        logger.info(f"[DEBUG] Preprocessing data for lookback period: {lookback_period}")
-        logger.info(f"[DEBUG] Columns in data before filtering: {data.columns}")
-        logger.info(f"[DEBUG] Starting preprocess with {len(data)} rows")
-
-        # Handle missing values
-        data = data.ffill().bfill()
-        logger.info(f"[DEBUG] Columns after handling missing values: {data.columns}")
-        logger.info(f"[DEBUG] After handling missing values, rows = {len(data)}")
-
-        # Add technical indicators
-        data = self._add_technical_indicators(data)
-        logger.info(f"[DEBUG] Columns after adding technical indicators: {data.columns}")
-        logger.info(f"[DEBUG] After adding technical indicators, rows = {len(data)}")
-
-        data = self._add_derived_features(data)
-        logger.info(f"[DEBUG] Columns after adding derived features: {data.columns}")
-        logger.info(f"[DEBUG] After adding derived features, rows = {len(data)}")
-        logger.info(f"[DEBUG] 'returns' column present: {'returns' in data.columns}")
-
-        # Validate required columns
-        required_columns = self.config.model.features
-        missing_columns = set(required_columns) - set(data.columns)
-        if missing_columns:
-            logger.warning(f"Missing required columns: {missing_columns}. Generating fallback values or dropping non-critical features.")
-            for col in missing_columns:
-                if col == 'close':
-                    raise ValueError("Critical feature 'close' is missing after preprocessing.")
-                elif col == 'returns':
-                    data['returns'] = data['close'].pct_change()
-                    data['returns'].fillna(0, inplace=True)
-                elif col == 'rsi':
-                    data['rsi'] = self._calculate_rsi(data['close'])
-                elif col == 'macd':
-                    data['macd'] = self._calculate_macd(data['close'])
-                elif col in ['bb_upper', 'bb_lower']:
-                    data['bb_upper'], data['bb_lower'] = self._calculate_bollinger_bands(data['close'])
-                elif col == 'volatility':
-                    data['volatility'] = data['returns'].rolling(window=20).std()
-                elif col == 'volume_ma':
-                    if 'volume' in data.columns:
-                        data['volume_ma'] = data['volume'].rolling(window=20).mean().ffill()
-                    else:
-                        logger.warning("'volume' column not found. Skipping volume moving average calculation.")
-                elif col == 'open':
-                    logger.warning(f"Generating fallback value for missing 'open' feature based on previous day's 'close' price.")
-                    data['open'] = data['close'].shift(1)
-                elif col in ['high', 'low']:
-                    logger.warning(f"Forward filling missing '{col}' feature with 'close' price.")
-                    data[col] = data['close']
-                elif col == 'volume':
-                    logger.warning("'volume' column not found. Filling with zeros.")
-                    data['volume'] = 0
-                else:
-                    raise ValueError(f"Missing required feature: {col}")
-        logger.info(f"[DEBUG] Columns after validating required columns: {data.columns}")
-        logger.info(f"[DEBUG] After validating required columns, rows = {len(data)}")
-
-
-
-
-
-
-
-
-        # At this point 'returns_lag' is still in data.columns
-        logger.info(f"[DEBUG] Features from config: {self.config.model.features}")
-        # Select only available features in config.model.features
-        available_features = [col for col in self.config.model.features if col in data.columns]
-
-        # Keep target column separate
-        target_data = data[self.config.model.target] if self.config.model.target in data.columns else None
-
-        # Select only features
-        data = data[available_features]
-
-        # Create sequences from features and target
-        if target_data is not None:
-            X, y = self._create_sequences(data.values, target_data.values)
-        else:
-            # Handle case where no target data is available
-            logger.warning("No target data available for sequence creation")
-            X, y = None, None
-
-        return X, y
-    
-    def _scale_features(self, data):
-        """Scale features using MinMaxScaler."""
-        scaler = MinMaxScaler()
-        data_scaled = pd.DataFrame(scaler.fit_transform(data.drop(columns=['ticker'])), columns=data.columns.drop('ticker'), index=data.index)
-        self.scalers[data['ticker'].iloc[0]] = scaler
-        return data_scaled
-    
-    def _calculate_rsi(self, close, window=14):
-        """Calculate Relative Strength Index (RSI)."""
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        avg_gain = gain.rolling(window=window).mean()
-        avg_loss = loss.rolling(window=window).mean()
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-    
-    def _calculate_macd(self, close, short_period=12, long_period=26, signal_period=9):
-        """Calculate Moving Average Convergence Divergence (MACD)."""
-        ema_short = close.ewm(span=short_period, adjust=False).mean()
-        ema_long = close.ewm(span=long_period, adjust=False).mean()
-        macd_line = ema_short - ema_long
-        signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
-        macd_histogram = macd_line - signal_line
-        return macd_histogram
-    
-    def _calculate_bollinger_bands(self, close, window=20, num_std=2):
-        """Calculate Bollinger Bands."""
-        rolling_mean = close.rolling(window=window).mean()
-        rolling_std = close.rolling(window=window).std()
-        upper_band = rolling_mean + (rolling_std * num_std)
-        lower_band = rolling_mean - (rolling_std * num_std)
-        return upper_band, lower_band
-    
-    def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add technical indicators to the dataframe."""
+    def preprocess_data(self, df: pd.DataFrame, ticker: str) -> pd.DataFrame:
+        """Preprocess raw data with improved NaN handling."""
         try:
-            logger.info(f"[DEBUG] Calculating RSI for 'close' column")
-            df['rsi'] = self._calculate_rsi(df['close'])
-            logger.info(f"[DEBUG] Calculating MACD for 'close' column")
-            df['macd'] = self._calculate_macd(df['close'])
-            logger.info(f"[DEBUG] Calculating Bollinger Bands for 'close' column")
-            df['bb_upper'], df['bb_lower'] = self._calculate_bollinger_bands(df['close'])
+            # Validate input data
+            self.validate_data(df)
             
-            return df
+            # Convert column names to lowercase
+            df.columns = df.columns.str.lower()
             
-        except Exception as e:
-            logger.error(f"Error in adding technical indicators: {str(e)}")
-            raise
-    
-    def _add_derived_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add derived features to the dataframe."""
-        try:
+            # Forward fill NaN values in price data
+            price_cols = ['open', 'high', 'low', 'close']
+            df[price_cols] = df[price_cols].ffill()
+            
+            # Calculate returns after filling NaNs
             df['returns'] = df['close'].pct_change()
-            df['returns'].fillna(0, inplace=True)
-            logger.info(f"[DEBUG] Calculated 'returns' column: {df['returns'].head()}")
-
-            # Calculate 'returns_lag' column
-            df['returns_lag'] = df['returns'].shift(1).fillna(0)
-            logger.info(f"[DEBUG] Calculated 'returns_lag' column: {df['returns_lag'].head()}")
-
-            df['volatility'] = df['returns'].rolling(window=20).std()
+            df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
             
-            if 'volume' in df.columns:
-                df['volume_ma'] = df['volume'].rolling(window=20).mean().ffill()
-            else:
-                logger.warning("'volume' column not found. Skipping volume moving average calculation.")
+            # Handle volume data
+            df['volume'] = df['volume'].fillna(df['volume'].mean())
+            df['volume'] = df['volume'].astype(np.float64)
             
-            logger.info(f"[DEBUG] Columns after adding derived features: {df.columns}")
+            # Add technical indicators with error handling
+            df = self._add_technical_indicators(df)
+            
+            # Scale features
+            df = self._scale_features(df)
+            
+            # Calculate target variables
+            df['target_next_return'] = df['returns'].shift(-1)
+            df['target_direction'] = np.sign(df['target_next_return'])
+            
+            # Fill remaining NaN values with forward fill then backward fill
+            df = df.ffill().bfill()
+            
+            # Drop rows where critical values are still NaN
+            critical_cols = ['returns', 'target_next_return', 'target_direction']
+            initial_size = len(df)
+            df = df.dropna(subset=critical_cols)
+            final_size = len(df)
+            
+            if final_size < initial_size:
+                logger.info(f"Dropped {initial_size - final_size} rows with NaN values in critical columns for {ticker}")
+            
+            if final_size < 100:  # Minimum required for any meaningful analysis
+                logger.warning(f"Too few samples remaining for {ticker} after preprocessing: {final_size}")
+                return pd.DataFrame()  # Return empty DataFrame to signal invalid data
+            
+            logger.info(f"Successfully preprocessed data for {ticker}: {final_size} samples")
             return df
             
         except Exception as e:
-            logger.error(f"Error in adding derived features: {str(e)}")
-            raise
-    
-    def prepare_ml_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Prepare data for machine learning model."""
+            logger.error(f"Error preprocessing data for {ticker}: {str(e)}")
+            return pd.DataFrame()  # Return empty DataFrame on error
+
+    def _scale_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Scale features using rolling standardization."""
+        # List of features to scale
+        price_cols = ['open', 'high', 'low', 'close']
+        volume_cols = ['volume', 'volume_ema']
+        indicator_cols = [
+            'ema_5', 'ema_10', 'ema_20', 'ema_50',
+            'macd', 'macd_signal', 'macd_hist',
+            'atr', 'obv', 'cmf', 'price_momentum',
+            'volume_momentum', 'volatility_14', 'ema_ratio_fast',
+            'ema_ratio_slow'
+        ]
+        
+        # Scale price features
+        for col in price_cols:
+            if col in df.columns:
+                df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+        
+        # Scale volume features
+        for col in volume_cols:
+            if col in df.columns:
+                df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+        
+        # Scale technical indicators
+        for col in indicator_cols:
+            if col in df.columns:
+                if df[col].std() != 0:  # Only scale if there's variation
+                    df[f'{col}_scaled'] = (df[col] - df[col].rolling(window=20).mean()) / df[col].rolling(window=20).std()
+                else:
+                    df[f'{col}_scaled'] = 0  # Set to 0 if no variation
+        
+        # Fill NaN values with 0 for scaled features
+        scaled_cols = [col for col in df.columns if col.endswith('_scaled')]
+        df[scaled_cols] = df[scaled_cols].fillna(0)
+        
+        return df
+
+    def validate_data(self, df: pd.DataFrame):
+        """Validate input data."""
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+        
+        if df.isnull().any().any():
+            logging.warning("Data contains NaN values, will be dropped during preprocessing")
+
+    def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add technical indicators using pandas_ta."""
         try:
-            logger.info("Preparing features for ML model")
+            # Convert volume to float64 to avoid dtype issues
+            df['volume'] = df['volume'].astype(np.float64)
             
-            # Convert feature names to lowercase for consistency
-            features = [str(f).lower() for f in self.config.model.features]
-            target = str(self.config.model.target).lower()
+            # Price-based features
+            df['log_return'] = np.log(df['close'] / df['close'].shift(1))
+            df['high_low_ratio'] = df['high'] / df['low']
+            df['close_open_ratio'] = df['close'] / df['open']
             
-            # Ensure all required features are present
-            missing_features = set(features) - set(df.columns)
-            if missing_features:
-                raise ValueError(f"Missing features in data: {missing_features}")
+            # Trend indicators
+            df['ema_5'] = df.ta.ema(length=5)
+            df['ema_10'] = df.ta.ema(length=10)
+            df['ema_20'] = df.ta.ema(length=20)
+            df['ema_50'] = df.ta.ema(length=50)
             
-            # Select features and target
-            feature_data = df[features].values
-            target_data = df[target].values
+            # Momentum indicators
+            df['rsi'] = df.ta.rsi(length=14)
+            stoch = df.ta.stoch(length=14)
+            df['stoch_k'] = stoch['STOCHk_14_3_3']
+            df['stoch_d'] = stoch['STOCHd_14_3_3']
+            df['willr'] = df.ta.willr(length=14)
+            df['roc'] = df.ta.roc(length=12)
             
-            # Create sequences with proper 3D shape
-            num_samples = len(feature_data) - self.config.model.lookback_period
-            X = np.zeros((num_samples, self.config.model.lookback_period, len(features)))
-            y = np.zeros((num_samples))
+            # Volatility indicators
+            bbands = df.ta.bbands(length=20)
+            df['bb_upper'] = bbands['BBU_20_2.0']
+            df['bb_middle'] = bbands['BBM_20_2.0']
+            df['bb_lower'] = bbands['BBL_20_2.0']
+            df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+            df['atr'] = df.ta.atr(length=14)
             
-            for i in range(num_samples):
-                X[i] = feature_data[i:i + self.config.model.lookback_period]
-                y[i] = target_data[i + self.config.model.lookback_period]
+            # Volume indicators
+            df['volume_ema'] = df.ta.ema(close=df['volume'], length=20)
+            df['volume_ratio'] = df['volume'] / df['volume_ema']
+            df['obv'] = df.ta.obv()
+            df['cmf'] = df.ta.cmf(length=20)
             
-            # Split data
-            split_idx = int(len(X) * self.config.model.train_split)
-            X_train, X_test = X[:split_idx], X[split_idx:]
-            y_train, y_test = y[:split_idx], y[split_idx:]
+            # MACD
+            macd = df.ta.macd()
+            df['macd'] = macd['MACD_12_26_9']
+            df['macd_signal'] = macd['MACDs_12_26_9']
+            df['macd_hist'] = macd['MACDh_12_26_9']
             
-            logger.info(f"[DEBUG] X_train shape: {X_train.shape}")
-            logger.info(f"[DEBUG] y_train shape: {y_train.shape}")
-            logger.info(f"[DEBUG] X_test shape: {X_test.shape}")
-            logger.info(f"[DEBUG] y_test shape: {y_test.shape}")
+            # Custom features
+            df['price_momentum'] = df['close'].pct_change(5)
+            df['volume_momentum'] = df['volume'].pct_change(5)
+            df['volatility_14'] = df['log_return'].rolling(window=14).std() * np.sqrt(252)
             
-            return X_train, X_test, y_train, y_test
+            # Cross-sectional features
+            df['ema_ratio_fast'] = df['ema_5'] / df['ema_10']
+            df['ema_ratio_slow'] = df['ema_10'] / df['ema_20']
+            df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+            
+            # Calculate MFI
+            high = df['high'].astype(np.float64)
+            low = df['low'].astype(np.float64)
+            close = df['close'].astype(np.float64)
+            volume = df['volume'].astype(np.float64)
+            
+            typical_price = (high + low + close) / 3
+            raw_money_flow = typical_price * volume
+            
+            positive_flow = raw_money_flow.where(typical_price > typical_price.shift(1), 0)
+            negative_flow = raw_money_flow.where(typical_price < typical_price.shift(1), 0)
+            
+            positive_flow_sum = positive_flow.rolling(window=14).sum()
+            negative_flow_sum = negative_flow.rolling(window=14).sum()
+            money_flow_ratio = positive_flow_sum / negative_flow_sum
+            
+            df['mfi'] = 100 - (100 / (1 + money_flow_ratio))
+            df['mfi'] = df['mfi'].fillna(50)  # Fill NaN with neutral value
+            
+            # Drop any columns with all NaN values
+            df = df.dropna(axis=1, how='all')
+            
+            # Forward fill any remaining NaN values
+            df = df.ffill().fillna(0)
+            
+            return df
             
         except Exception as e:
-            logger.error(f"Error preparing ML data: {str(e)}")
+            logger.error(f"Error calculating technical indicators: {str(e)}")
             raise
-    
-    def get_unscaled_data(self) -> pd.DataFrame:
-        """Get the unscaled data for trading execution."""
-        if self.original_data is None:
-            raise ValueError("No data available. Call fetch_data first.")
-        return self.original_data
-    
-    def _create_sequences(self, features: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Create sequences for time series prediction."""
-        X, y = [], []
-        
-        for i in range(len(features) - self.config.model.lookback_period - self.config.model.prediction_horizon + 1):
-            X.append(features[i:(i + self.config.model.lookback_period)])
-            y.append(target[i + self.config.model.lookback_period:i + self.config.model.lookback_period + self.config.model.prediction_horizon])
-        
-        return np.array(X), np.array(y)
-    
-    def _split_data(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Split data into training and testing sets."""
-        split_idx = int(len(X) * self.config.model.train_split)
-        X_train, X_test = X[:split_idx], X[split_idx:]
-        y_train, y_test = y[:split_idx], y[split_idx:]
-        
-        logger.info(f"[DEBUG] y_train shape: {y_train.shape}")
-        logger.info(f"[DEBUG] y_train info:\n{pd.DataFrame(y_train.reshape(-1, y_train.shape[-1])).info()}")
-        
-        logger.info(f"[DEBUG] y_test shape: {y_test.shape}")
-        logger.info(f"[DEBUG] y_test info:\n{pd.DataFrame(y_test.reshape(-1, y_test.shape[-1])).info()}")
-        
-        logger.info(f"[DEBUG] Training set shape: {X_train.shape}, Test set shape: {X_test.shape}")
-        return X_train, X_test, y_train, y_test
 
-def load_data(tickers, start_date, end_date):
-    loader = DataLoader(tickers, start_date, end_date)
-    data = loader.fetch_data()
-    return data
+    def create_sequences(self, data: pd.DataFrame, lookback_period: int, horizon: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Create sequences for LSTM input with enhanced feature selection."""
+        try:
+            # Define core features that should be available for all stocks
+            core_scaled_features = [
+                'open_scaled', 'high_scaled', 'low_scaled', 'close_scaled',
+                'volume_scaled', 'volume_ema_scaled', 'ema_5_scaled', 'ema_10_scaled', 'ema_20_scaled',
+                'ema_50_scaled', 'macd_scaled', 'macd_signal_scaled', 'macd_hist_scaled',
+                'atr_scaled', 'obv_scaled', 'cmf_scaled', 'price_momentum_scaled',
+                'volume_momentum_scaled', 'volatility_14_scaled', 'ema_ratio_fast_scaled',
+                'ema_ratio_slow_scaled'
+            ]
+            
+            # Core normalized features
+            core_normalized_features = [
+                'rsi', 'stoch_k', 'stoch_d', 'willr', 'bb_position', 'mfi'
+            ]
+            
+            # Log feature information
+            logger.info(f"Using {len(core_scaled_features) + len(core_normalized_features)} consistent features for all stocks")
+            logger.info(f"Creating sequences with lookback_period={lookback_period}, horizon={horizon}")
+            logger.info(f"Data shape: {data.shape}")
+            
+            # Verify all required features are present
+            missing_scaled = [f for f in core_scaled_features if f not in data.columns]
+            missing_normalized = [f for f in core_normalized_features if f not in data.columns]
+            
+            if missing_scaled or missing_normalized:
+                logger.warning(f"Missing features: {missing_scaled + missing_normalized}")
+                # Add missing features with zeros
+                for feature in missing_scaled + missing_normalized:
+                    data[feature] = 0.0
+            
+            # Combine all features
+            feature_columns = core_scaled_features + core_normalized_features
+            
+            # Create sequences
+            sequences = []
+            targets = []
+            skipped = 0
+            nan_count = 0
+            
+            for i in range(len(data) - lookback_period - horizon + 1):
+                # Extract sequence
+                sequence = data[feature_columns].iloc[i:i+lookback_period].values
+                
+                # Extract target (next 'horizon' returns and directions)
+                returns = data['target_next_return'].iloc[i+lookback_period:i+lookback_period+horizon].values
+                directions = data['target_direction'].iloc[i+lookback_period:i+lookback_period+horizon].values
+                target = np.concatenate([returns, directions])
+                
+                # Check for NaN values
+                if np.isnan(sequence).any() or np.isnan(target).any():
+                    nan_count += 1
+                    continue
+                    
+                # Check sequence validity
+                if len(sequence) != lookback_period or len(target) != horizon * 2:
+                    skipped += 1
+                    continue
+                    
+                sequences.append(sequence)
+                targets.append(target)
+            
+            # Convert to numpy arrays
+            X = np.array(sequences)
+            y = np.array(targets)
+            
+            # Log sequence creation results
+            logger.info(f"Created {len(sequences)} valid sequences")
+            logger.info(f"Skipped {skipped} invalid sequences")
+            logger.info(f"Found {nan_count} sequences with NaN values")
+            
+            # Verify shapes
+            if len(X) > 0:
+                logger.info(f"First valid sequence shape: {X[0].shape}")
+                logger.info(f"First valid target shape: {y[0].shape}")
+                logger.info(f"Final shapes - X: {X.shape}, y: {y.shape}")
+            else:
+                raise ValueError("No valid sequences created")
+            
+            return X, y
+            
+        except Exception as e:
+            logger.error(f"Error creating sequences: {str(e)}")
+            raise
+
+    def prepare_data(self, lookback_period: int, horizon: int) -> Dict[str, Dict[str, np.ndarray]]:
+        """Prepare data for all tickers with enhanced validation."""
+        prepared_data = {}
+        min_required_samples = 1000  # Minimum samples needed for reliable training
+        
+        for ticker in self.tickers:
+            try:
+                if ticker not in self.data:
+                    logger.warning(f"Loading data for {ticker}...")
+                    self.load_data()
+                
+                df = self.data.get(ticker)
+                if df is None:
+                    logger.error(f"No data available for {ticker}")
+                    continue
+                
+                # Create sequences with validation
+                try:
+                    X, y = self.create_sequences(df, lookback_period, horizon)
+                    
+                    # Verify sequence creation
+                    if len(X) < lookback_period + horizon:
+                        logger.error(f"Insufficient sequences created for {ticker}")
+                        continue
+                        
+                    # Verify no NaN values
+                    if np.isnan(X).any() or np.isnan(y).any():
+                        logger.error(f"NaN values found in sequences for {ticker}")
+                        continue
+                        
+                    # Verify target shape
+                    expected_target_shape = horizon * 2  # Both returns and directions
+                    if y.shape[1] != expected_target_shape:
+                        logger.error(f"Invalid target shape for {ticker}. Expected {expected_target_shape}, got {y.shape[1]}")
+                        continue
+                    
+                    prepared_data[ticker] = {
+                        'X': X,
+                        'y': y
+                    }
+                    
+                    logger.info(f"Successfully prepared data for {ticker}:")
+                    logger.info(f"  Sequences: {len(X)}")
+                    logger.info(f"  Features: {X.shape[2]}")
+                    logger.info(f"  Target shape: {y.shape[1]} (returns and directions)")
+                    logger.info(f"  Prediction horizon: {horizon}")
+                    
+                except Exception as e:
+                    logger.error(f"Error creating sequences for {ticker}: {str(e)}")
+                    continue
+                    
+            except Exception as e:
+                logger.error(f"Error preparing data for {ticker}: {str(e)}")
+                continue
+        
+        if not prepared_data:
+            raise ValueError("No valid data prepared for any ticker")
+        
+        return prepared_data

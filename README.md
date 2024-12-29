@@ -1,149 +1,110 @@
-# Project README
+# Trading Bot
 
-This repository contains code, logs, and various configuration files for a TensorFlow-based trading bot. Below is a high-level overview of each file and directory, along with usage instructions.
-For further insight and instruction, check out the documentation folder.
+A machine learning-based trading bot that uses LSTM neural networks to predict stock price movements and execute trades.
 
----
+## Features
 
-## 1. Logs Directory
+- Data collection from Yahoo Finance
+- Technical indicator calculation
+- LSTM model with attention mechanism for price prediction
+- Backtesting engine with position management
+- Risk management with stop-loss and take-profit
+- Performance metrics calculation
+- Configurable trading parameters
 
-The `logs` folder contains timestamped log files from runs of the trading bot. Each file typically records information about:
+## Installation
 
-- The training process (such as the number of epochs, data shape, model summary).
-- Any warnings or errors encountered (for example, dimension mismatches in the LSTM layers).
-
-Example log files:
-
-- `trading_bot_20241222_211414.log`
-- `trading_bot_20241222_212435.log` 
-- `trading_bot_20241222_212049.log`
-- ... (and so on)
-
-These files are mostly for debugging. If a run fails with an error, searching these log files can help you trace the cause (for instance, the "Dimensions must be equal" error for an LSTM layer input mismatch).
-
----
-
-## 2. requirements.txt
-
-This file lists the Python dependencies needed to run or develop the trading bot. For example:
-
-- `numpy>=1.26.0,<2.0.0`
-- `tensorflow>=2.6.0,<2.19.0`
-- `pandas>=1.3.0`
-- ... etc.
-
-To install everything in a fresh environment, you would typically run:
-
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/trading_bot.git
+cd trading_bot
 ```
+
+2. Create a virtual environment (optional but recommended):
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
 pip install -r requirements.txt
 ```
 
-Make sure you have Python 3.9+ (as TensorFlow 2.18 requires Python ≥ 3.9).
+## Configuration
 
----
+Edit `config.json` to configure:
+- Trading pairs
+- Time period
+- Model parameters
+- Trading parameters
+- Risk management settings
 
-## 3. trading_env/Lib/site-packages/tensorflow/...
+## Usage
 
-Within this directory, you'll find files and folders that belong to the TensorFlow package installation. Typically, you do not need to modify these files directly; they are part of the underlying TensorFlow library. However, they're included here if you need to inspect TensorFlow's internal behavior for debugging:
-
-- `python/pywrap_tensorflow.py`
-  - Loads the native TensorFlow runtime and provides error messages if it fails.
-- `tools/compatibility/tf_upgrade_v2.py`  
-  - A script that helps migrate TensorFlow 1.x code to 2.x.
-  - You generally wouldn't manually edit this in a normal workflow; it's provided by TensorFlow for backward compatibility.
-- `tools/pip_package/setup.py`
-  - The setup script for building the official TensorFlow pip package.
-- `api/v2/...`
-  - Various submodules under the TensorFlow v2 API namespace.
-
-### Why these files appear
-
-When the trading bot is installed in a virtual environment (or a site-packages directory), the TensorFlow library spreads out its internal modules. They show up here if you're browsing the environment.
-
----
-
-## 4. trading_env/Lib/site-packages/tensorflow-2.18.0.dist-info/...
-
-These files store "metadata" about the TensorFlow 2.18.0 installation. Examples:
-
-- `METADATA`
-  - High-level information about the TensorFlow package: name, version, author, dependencies required, etc.
-- `REQUESTED`
-  - Indicates that TensorFlow was explicitly installed (as opposed to being pulled in as a dependency).
-- `WHEEL` / `RECORD`
-  - Technical metadata used by pip to track installed files, versions, checksums, etc.
-
-Likewise for:
-
-`trading_env/Lib/site-packages/tensorflow_intel-2.18.0.dist-info/...`
-
-This is another distribution-info folder that represents the CPU/GPU-accelerated Intel build of TensorFlow 2.18.0.
-
----
-
-## 5. High-Level Usage
-
-Below is a typical workflow for using this trading bot (assuming it's set up in a Python environment):
-
-### Activate Your Virtual Environment
-
-Windows:
-
-```
-python -m venv venv
-.\venv\Scripts\activate
-```
-
-Mac/Linux:
-
-```
-python -m venv venv
-source venv/bin/activate
-```
-
-### Install Dependencies
-
-```
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Run the Trading Bot
-
-Depending on how the main script is set up, you might do something like:
-
-```
+Run the trading bot:
+```bash
 python main.py
 ```
 
-(or whichever file boots the training and inference process)
+## Testing
 
-### Monitor Logs
+The project includes comprehensive unit tests for all major components. To run the tests:
 
-If the bot encounters errors, or if you want to check the training progress, refer to the `logs/*.log` files. They contain detailed debugging info such as dimension mismatches in LSTM layers or other stack traces.
+1. Run all tests with coverage reporting:
+```bash
+python tests/run_tests.py
+```
 
----
+2. View the coverage report in your browser:
+```bash
+open coverage_report/index.html  # On Windows: start coverage_report/index.html
+```
 
-## 6. Modifying or Extending the Code
+The test suite includes:
+- Model architecture tests
+- Data processing tests
+- Strategy implementation tests
+- Backtesting engine tests
+- Configuration validation tests
 
-- If you need to make changes to the model architecture (for example, adjusting LSTM layers or the number of features), you would typically look for Python files in a subfolder named `models` or in a main script.
-- You can also customize training hyperparameters (such as the number of epochs or batch size) in the script that creates and trains your model.
-- If you need to add or remove columns from your data, you'll likely adjust your preprocessing script or the data loading logic.
+## Project Structure
 
----
+```
+trading_bot/
+├── config/
+│   ├── config.json
+│   └── config.py
+├── data/
+│   ├── data_loader.py
+│   └── data_splitter.py
+├── models/
+│   └── ml_model.py
+├── strategies/
+│   └── ml_strategy.py
+├── backtesting/
+│   ├── backtester.py
+│   ├── position.py
+│   └── metrics.py
+├── tests/
+│   ├── test_models.py
+│   ├── test_data.py
+│   ├── test_strategies.py
+│   ├── test_backtester.py
+│   └── test_config.py
+├── logs/
+├── main.py
+└── requirements.txt
+```
 
-## 7. Troubleshooting
+## Contributing
 
-- If you see dimension mismatch errors in the logs (e.g., "Dimensions must be equal, but are 12 and 9"), that usually indicates an inconsistency between the shape of your input data and the LSTM layer's expected input dimension.
-- Check the logs for more details, and confirm that your data shape `(batch_size, timesteps, features)` matches the `input_shape` specified in your LSTM layer(s).
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests to ensure everything works
+5. Submit a pull request
 
----
+## License
 
-## 8. Summary
-
-This project bundles a TensorFlow-based trading bot, related logs, and environment specifications. Here's a concise rundown of where to look for common tasks:
-
-- `logs`: Check these to see any training or runtime errors.
-- `requirements.txt`: Install your Python dependencies.
-- `trading_env/Lib/site-packages/tensorflow/`: TensorFlow code and info. Typically do not modify these unless you're debugging deep TensorFlow internals.
-- `.dist-info` directories: Pipeline metadata about installed packages.
+This project is licensed under the MIT License - see the LICENSE file for details.

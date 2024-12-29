@@ -1,299 +1,265 @@
-import numpy as np
-from config.config import Config
-from data.data_loader import DataLoader, load_data
-from models.ml_model import MLModel
-from strategies.ml_strategy import MLTradingStrategy
-from strategies.technical_strategy import TechnicalStrategy
-from datetime import datetime, timedelta
-import logging
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+"""
+Main entry point for the trading bot.
+"""
 import os
-import warnings
+from datetime import datetime
+import logging
 import signal
 import sys
-from data.data_splitter import split_data
+import pandas as pd
+import numpy as np
 import traceback
-warnings.filterwarnings('ignore')  # Suppress warnings for cleaner output
+import argparse
+import tensorflow as tf
+from config.config import Config
+from data.data_loader import DataLoader
+from data.data_splitter import split_data
+from models.ml_model import MLModel
+from strategies.ml_strategy import MLTradingStrategy
+from pathlib import Path
 
 def setup_logging():
-    """Set up logging configuration with both console and file output."""
-    # Create logs directory if it doesn't exist
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
-        
-    # Generate log filename with timestamp
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_filename = f'logs/trading_bot_{timestamp}.log'
+    """Set up logging configuration."""
+    # Create logs directory structure
+    os.makedirs('logs', exist_ok=True)
+    os.makedirs('logs/fit', exist_ok=True)
     
-    # Configure logging format
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f'logs/trading_bot_{timestamp}.log'
+    error_filename = f'logs/trading_bot_errors_{timestamp}.log'
+    
+    # Configure main logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filename, encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ]
     )
     
-    # Set up file handler
-    file_handler = logging.FileHandler(log_filename)
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.INFO)
+    # Configure error logger
+    error_logger = logging.getLogger('error_logger')
+    error_logger.setLevel(logging.ERROR)
+    error_handler = logging.FileHandler(error_filename, encoding='utf-8')
+    error_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s\n%(exc_info)s'))
+    error_logger.addHandler(error_handler)
     
-    # Set up console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(logging.INFO)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-    
-    return logging.getLogger(__name__)
+    return logging.getLogger(__name__), error_logger
 
-def plot_training_history(history: dict, save_path: str = None):
-    """Plot training history metrics."""
-    plt.figure(figsize=(12, 4))
-    
-    plt.subplot(1, 2, 1)
-    plt.plot(history['loss'], label='Training Loss')
-    plt.plot(history['val_loss'], label='Validation Loss')
-    plt.title('Model Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    
-    plt.subplot(1, 2, 2)
-    plt.plot(history['mae'], label='Training MAE')
-    plt.plot(history['val_mae'], label='Validation MAE')
-    plt.title('Model MAE')
-    plt.xlabel('Epoch')
-    plt.ylabel('MAE')
-    plt.legend()
-    
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path)
-    plt.close()
+logger, error_logger = setup_logging()
 
-def plot_trading_results(data: pd.DataFrame, trades: list, save_path: str = None):
-    """Plot trading results with buy/sell signals."""
-    plt.figure(figsize=(15, 8))
-    
-    # Plot price
-    plt.plot(data.index, data['close'], label='Price', alpha=0.7)
-    
-    # Plot buy signals
-    buys = [(t['date'], t['price']) for t in trades if t['action'] == 'BUY']
-    if buys:
-        buy_dates, buy_prices = zip(*buys)
-        plt.scatter(buy_dates, buy_prices, color='green', marker='^', 
-                   label='Buy', alpha=0.7)
-    
-    # Plot sell signals
-    sells = [(t['date'], t['price']) for t in trades if t['action'] == 'SELL']
-    if sells:
-        sell_dates, sell_prices = zip(*sells)
-        plt.scatter(sell_dates, sell_prices, color='red', marker='v',
-                   label='Sell', alpha=0.7)
-    
-    plt.title('Trading Results')
-    plt.xlabel('Date')
-    plt.ylabel('Price')
-    plt.legend()
-    
-    if save_path:
-        plt.savefig(save_path)
-    plt.close()
-
-def run_backtest(strategy, data: pd.DataFrame, predictions: np.ndarray = None) -> tuple:
-    """Run backtest for a strategy and return results."""
-    signals = strategy.generate_signals(data, predictions)
-    trades = strategy.execute_trades(signals, data)
-    metrics = strategy.calculate_metrics(trades, data['close'].iloc[-1])
-    return trades, metrics
-
-def plot_portfolio_performance(data: pd.DataFrame, trades: list, metrics: dict, save_path: str = None):
-    """Plot detailed portfolio performance analysis."""
-    fig = plt.figure(figsize=(20, 12))
-    
-    # Plot 1: Price and Trades
-    ax1 = plt.subplot(2, 2, 1)
-    ax1.plot(data.index, data['close'], label='Price', alpha=0.7, color='blue')
-    
-    # Plot buy/sell points
-    buys = [(t['date'], t['price']) for t in trades if t['action'] == 'BUY']
-    sells = [(t['date'], t['price']) for t in trades if t['action'] in ['SELL', 'CLOSE']]
-    
-    if buys:
-        buy_dates, buy_prices = zip(*buys)
-        ax1.scatter(buy_dates, buy_prices, color='green', marker='^', 
-                   label='Buy', alpha=0.7, s=100)
-    
-    if sells:
-        sell_dates, sell_prices = zip(*sells)
-        ax1.scatter(sell_dates, sell_prices, color='red', marker='v',
-                   label='Sell', alpha=0.7, s=100)
-    
-    ax1.set_title('Trading Signals')
-    ax1.set_xlabel('Date')
-    ax1.set_ylabel('Price')
-    ax1.legend()
-    
-    # Plot 2: Portfolio Value
-    ax2 = plt.subplot(2, 2, 2)
-    portfolio_values = calculate_portfolio_values(data, trades, metrics['initial_capital'])
-    ax2.plot(data.index, portfolio_values, label='Portfolio Value', color='green')
-    ax2.set_title('Portfolio Value Over Time')
-    ax2.set_xlabel('Date')
-    ax2.set_ylabel('Portfolio Value ($)')
-    
-    # Add horizontal line for initial capital
-    ax2.axhline(y=metrics['initial_capital'], color='r', linestyle='--', 
-                label='Initial Capital')
-    ax2.legend()
-    
-    # Plot 3: Drawdown Analysis
-    ax3 = plt.subplot(2, 2, 3)
-    drawdowns = calculate_drawdowns(portfolio_values)
-    ax3.fill_between(data.index, drawdowns * 100, 0, color='red', alpha=0.3)
-    ax3.set_title('Drawdown Analysis')
-    ax3.set_xlabel('Date')
-    ax3.set_ylabel('Drawdown (%)')
-    
-    # Plot 4: Trade Distribution
-    ax4 = plt.subplot(2, 2, 4)
-    plot_trade_distribution(trades, ax4)
-    
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path)
-    plt.close()
-
-def calculate_portfolio_values(data: pd.DataFrame, trades: list, initial_capital: float) -> np.ndarray:
-    """Calculate portfolio value over time."""
-    portfolio_values = np.full(len(data), initial_capital)
-    current_position = 0
-    current_cash = initial_capital
-    
-    for trade in trades:
-        idx = data.index.get_loc(trade['date'])
+def process_ticker(ticker, data_loader, config, model_path=None):
+    """Process a single ticker's training and backtesting."""
+    try:
+        logger.info(f"Processing {ticker}...")
         
-        if trade['action'] == 'BUY':
-            current_position = trade['size']
-            current_cash -= trade['cost']
-        elif trade['action'] in ['SELL', 'CLOSE']:
-            current_position = 0
-            current_cash += trade['proceeds']
+        # Validate data availability
+        if ticker not in data_loader.data:
+            error_logger.error(f"No data available for {ticker}")
+            return None, None
             
-        # Update portfolio value from this point forward
-        portfolio_values[idx:] = current_cash + \
-            (current_position * data['close'].iloc[idx:])
-    
-    return portfolio_values
-
-def calculate_drawdowns(portfolio_values: np.ndarray) -> np.ndarray:
-    """Calculate drawdown percentage over time."""
-    rolling_max = np.maximum.accumulate(portfolio_values)
-    drawdowns = (rolling_max - portfolio_values) / rolling_max
-    return drawdowns
-
-def plot_trade_distribution(trades: list, ax):
-    """Plot trade profit distribution."""
-    profits = []
-    for trade in trades:
-        if trade['action'] in ['SELL', 'CLOSE']:
-            profit = trade.get('proceeds', 0) - trade.get('cost', 0)
-            profits.append(profit)
-    
-    if profits:
-        sns.histplot(profits, bins=20, ax=ax)
-        ax.axvline(x=0, color='r', linestyle='--')
-        ax.set_title('Trade Profit Distribution')
-        ax.set_xlabel('Profit/Loss ($)')
-        ax.set_ylabel('Frequency')
-
-def signal_handler(signum, frame):
-    print('\nReceived interrupt signal. Cleaning up...')
-    sys.exit(0)
+        # Prepare data sequences
+        try:
+            prepared_data = data_loader.prepare_data(
+                lookback_period=config.model['lookback_period'],
+                horizon=config.model['prediction_horizon']
+            )
+        except Exception as e:
+            error_logger.error(f"Failed to prepare data for {ticker}: {str(e)}\n{traceback.format_exc()}")
+            return None, None
+        
+        if ticker not in prepared_data:
+            error_logger.error(f"Failed to prepare data for {ticker}: Ticker not found in prepared data")
+            return None, None
+            
+        ticker_data = prepared_data[ticker]
+        
+        # Split data into train, validation, and test sets
+        try:
+            train_data, val_data, test_data = split_data(
+                {ticker: ticker_data},
+                train_split=config.model['train_split'],
+                val_split=config.model['val_split']
+            )
+        except Exception as e:
+            error_logger.error(f"Failed to split data for {ticker}: {str(e)}\n{traceback.format_exc()}")
+            return None, None
+        
+        # Get data for the current ticker
+        X_train, y_train = train_data[ticker]['X'], train_data[ticker]['y']
+        X_val, y_val = val_data[ticker]['X'], val_data[ticker]['y']
+        X_test, y_test = test_data[ticker]['X'], test_data[ticker]['y']
+        
+        # Initialize ML model
+        try:
+            input_shape = X_train.shape[1:]
+            horizon = config.model['prediction_horizon']
+            model = MLModel(input_shape=input_shape, horizon=horizon, config=config.model)
+            
+            if model_path:
+                try:
+                    # Load pre-trained model
+                    logger.info(f"Loading pre-trained model from {model_path}")
+                    model.model = tf.keras.models.load_model(model_path, compile=False)
+                    model.model.compile(
+                        optimizer=tf.keras.optimizers.Adam(learning_rate=config.model['learning_rate']),
+                        loss=model.combined_loss,
+                        metrics=[model.direction_accuracy]
+                    )
+                    logger.info("Successfully loaded and compiled pre-trained model")
+                except Exception as e:
+                    error_logger.error(f"Failed to load pre-trained model: {str(e)}\n{traceback.format_exc()}")
+                    return None, None
+            else:
+                # Train new model
+                logger.info(f"Training ML model for {ticker}...")
+                history = model.train(
+                    X_train, y_train,
+                    X_val, y_val
+                )
+                
+                # Check if training was successful
+                if history is None:
+                    error_logger.error(f"Training failed for {ticker}: No history returned")
+                    return None, None
+                
+                # Log training metrics
+                logger.info(f"Training history for {ticker}:")
+                for metric, values in history.items():
+                    logger.info(f"  {metric}: {values[-1]:.4f}")
+            
+            # Make predictions on test set
+            try:
+                predictions = model.predict(X_test)
+                if predictions is None:
+                    error_logger.error(f"Prediction failed for {ticker}: No predictions returned")
+                    return None, None
+            except Exception as e:
+                error_logger.error(f"Failed to make predictions for {ticker}: {str(e)}\n{traceback.format_exc()}")
+                return None, None
+            
+            # Initialize strategy with ML predictions
+            try:
+                strategy = MLTradingStrategy(config)
+                
+                # Get the original feature data for backtesting
+                backtest_data = data_loader.data[ticker].iloc[-len(test_data[ticker]['X']):]
+                backtest_results = strategy.backtest(backtest_data, predictions)
+                
+                if backtest_results is None:
+                    error_logger.error(f"Backtesting failed for {ticker}: No results returned")
+                    return None, None
+                
+                metrics = backtest_results['metrics']
+                trades = backtest_results['trades']
+                equity_curve = backtest_results['equity_curve']
+                
+                if trades and metrics:
+                    logger.info(f"Backtest completed for {ticker}. Metrics:")
+                    logger.info(f"  - Total trades: {metrics['total_trades']}")
+                    logger.info(f"  - Win rate: {metrics['win_rate']:.2%}")
+                    logger.info(f"  - Total return: {metrics['total_return']:.2%}")
+                    logger.info(f"  - Max drawdown: {metrics['max_drawdown']:.2%}")
+                    logger.info(f"  - Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
+                    logger.info(f"  - Profit factor: {metrics['profit_factor']:.2f}")
+                    return metrics, trades
+                else:
+                    error_logger.error(f"No valid backtest results for {ticker}")
+                    return None, None
+            except Exception as e:
+                error_logger.error(f"Failed to run backtest for {ticker}: {str(e)}\n{traceback.format_exc()}")
+                return None, None
+            
+        except Exception as e:
+            error_logger.error(f"Failed to train model for {ticker}: {str(e)}\n{traceback.format_exc()}")
+            return None, None
+        
+    except Exception as e:
+        error_logger.error(f"Error processing {ticker}: {str(e)}\n{traceback.format_exc()}")
+        return None, None
 
 def main():
-    # Set up signal handler
-    signal.signal(signal.SIGINT, signal_handler)
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Trading Bot')
+    parser.add_argument('--mode', choices=['train', 'backtest'], required=True, help='Mode of operation')
+    parser.add_argument('--model_path', help='Path to pre-trained model for backtesting')
+    args = parser.parse_args()
     
-    # Set up logging
-    logger = setup_logging()
     logger.info("=== Trading Bot Simulation Started ===")
     
     try:
-        # Initialize and validate configuration
+        # Load configuration
         config = Config.get_default_config()
         if not config.validate():
             logger.error("Invalid configuration settings")
             return
             
-        logger.info(f"Trading symbol: {config.trading.symbol}")
-        logger.info(f"Initial capital: ${config.trading.initial_capital:,.2f}")
+        logger.info(f"Tickers: {config.data['tickers']}")
         
-        # Define list of tickers and date range
-        tickers = ['AAPL', 'GOOGL', 'MSFT', 'AMZN']
-        start_date = '2020-01-01'
-        end_date = '2023-05-31'
+        success_count = 0
+        error_count = 0
         
-        # Load and preprocess data for all tickers
-        data = load_data(tickers, start_date, end_date)
-        logger.debug(f"Data keys: {data.keys()}")
+        # Initialize data loader
+        data_loader = DataLoader(
+            tickers=config.data['tickers'],
+            start_date=config.data['start_date'],
+            end_date=config.data['end_date']
+        )
         
-        # Split data into train and test sets for each ticker
-        train_data, test_data = split_data(data)
+        # Load all data first
+        logger.info("Loading data for all tickers...")
+        try:
+            data = data_loader.load_data()
+        except Exception as e:
+            logger.error(f"Failed to load data: {str(e)}")
+            return
+            
+        # Prepare sequences for all tickers
+        logger.info("Preparing sequences for all tickers...")
+        try:
+            prepared_data = data_loader.prepare_data(
+                lookback_period=config.model['lookback_period'],
+                horizon=config.model['prediction_horizon']
+            )
+        except Exception as e:
+            logger.error(f"Failed to prepare data: {str(e)}")
+            return
         
-        # Train models and run backtesting for each ticker
-        if 'tickers' in config.data:
-            for ticker in config.data['tickers']:
+        for ticker in config.data['tickers']:
+            try:
                 logger.info(f"Processing {ticker}...")
                 
-                if ticker not in train_data:
-                    logger.warning(f"Skipping {ticker} due to missing train data.")
+                if ticker not in prepared_data:
+                    logger.error(f"No prepared data available for {ticker}")
+                    error_count += 1
                     continue
                 
-                try:
-                    X_train, y_train = train_data[ticker]
-                    X_test, y_test = test_data[ticker]
-                    
-                    logger.debug(f"X_train shape: {X_train.shape}")
-                    logger.debug(f"y_train shape: {y_train.shape}")
-                    logger.debug(f"X_test shape: {X_test.shape}")  
-                    logger.debug(f"y_test shape: {y_test.shape}")
-                    
-                    # Train ML model
-                    ml_model = MLModel(config)
-                    ml_model.train(X_train, y_train, X_test, y_test)
-                    
-                    # Generate predictions
-                    logger.info(f"X_test shape before predict: {X_test.shape}")
-                    predictions = ml_model.predict(X_test)
-                    
-                    # Run ML strategy backtest
-                    ml_strategy = MLTradingStrategy(config, ml_model)
-                    ml_results = run_backtest(ml_strategy, X_test, predictions)
-                    
-                    # Run technical strategy backtest
-                    tech_strategy = TechnicalStrategy(config)
-                    tech_results = run_backtest(tech_strategy, X_test, predictions)
-                    
-                    # Evaluate and compare strategies
-                    evaluate_strategy(ml_results, tech_results, ticker)
-                    
-                except Exception as e:
-                    logger.error(f"Error in main: {e}")
-                    traceback.print_exc()
-        else:
-            logger.error("No tickers found in config.data")
-            
+                # Process ticker with appropriate mode
+                metrics, trades = process_ticker(ticker, data_loader, config, args.model_path if args.mode == 'backtest' else None)
+                
+                if metrics is not None and trades is not None:
+                    success_count += 1
+                else:
+                    error_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing {ticker}: {str(e)}")
+                error_count += 1
+                continue
+        
         logger.info("=== Trading Bot Simulation Completed ===")
+        logger.info(f"Successfully processed: {success_count}/{len(config.data['tickers'])} tickers")
+        logger.info(f"Failed to process: {error_count}/{len(config.data['tickers'])} tickers")
         
     except Exception as e:
-        logger.error(f"Error in main: {str(e)}")
+        logger.error(f"Fatal error: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    main()
+    try:
+        signal.signal(signal.SIGINT, lambda signum, frame: sys.exit(0))
+        main()
+    except Exception as e:
+        error_logger.error(f"Fatal error: {str(e)}\n{traceback.format_exc()}")
+        sys.exit(1)
