@@ -1,16 +1,18 @@
 # Trading Bot
 
-A machine learning-based trading bot that uses LSTM neural networks to predict stock price movements and execute trades.
+A sophisticated machine learning-based trading bot that uses LSTM neural networks with attention mechanisms to predict stock price movements and execute trades.
 
 ## Features
 
-- Data collection from Yahoo Finance
-- Technical indicator calculation
-- LSTM model with attention mechanism for price prediction
-- Backtesting engine with position management
-- Risk management with stop-loss and take-profit
-- Performance metrics calculation
-- Configurable trading parameters
+- Advanced data collection and preprocessing from Yahoo Finance
+- Comprehensive technical indicator calculation and feature engineering
+- Enhanced LSTM model with attention mechanism and residual connections
+- Hybrid trading strategy combining ML predictions with technical analysis
+- Robust backtesting engine with position management
+- Dynamic risk management with adaptive stop-loss and take-profit
+- Detailed performance metrics and visualization
+- Highly configurable trading parameters
+- Real-time logging and monitoring
 
 ## Installation
 
@@ -34,67 +36,119 @@ pip install -r requirements.txt
 ## Configuration
 
 Edit `config.json` to configure:
-- Trading pairs
-- Time period
-- Model parameters
-- Trading parameters
+- Trading pairs and timeframes
+- Model hyperparameters
+- Trading strategy parameters
 - Risk management settings
+- Logging preferences
 
 ## Usage
 
-Run the trading bot:
+1. Run the trading bot:
 ```bash
 python main.py
 ```
 
+2. Monitor the logs:
+- Check `logs/trading_bot.log` for general execution logs
+- Check `logs/training/*.log` for model training logs
+- Check `logs/backtest/*.log` for backtest results
+
 ## Testing
 
-The project includes comprehensive unit tests for all major components. To run the tests:
+The project includes comprehensive unit tests and integration tests:
 
 1. Run all tests with coverage reporting:
 ```bash
 python tests/run_tests.py
 ```
 
-2. View the coverage report in your browser:
+2. View the coverage report:
 ```bash
 open coverage_report/index.html  # On Windows: start coverage_report/index.html
 ```
 
-The test suite includes:
-- Model architecture tests
-- Data processing tests
-- Strategy implementation tests
-- Backtesting engine tests
-- Configuration validation tests
+Test suite includes:
+- Model architecture and training tests
+- Data processing and feature engineering tests
+- Strategy implementation and signal generation tests
+- Backtesting engine and performance metrics tests
+- Configuration validation and error handling tests
 
 ## Project Structure
 
 ```
 trading_bot/
+│
 ├── config/
-│   ├── config.json
-│   └── config.py
+│   ├── __init__.py
+│   ├── config.py           # Configuration settings
+│   └── logging_config.py   # Logging configuration
+│
 ├── data/
-│   ├── data_loader.py
-│   └── data_splitter.py
+│   ├── __init__.py
+│   ├── data_loader.py      # Data fetching and preprocessing
+│   ├── feature_engineer.py # Feature engineering
+│   └── data_validator.py   # Data validation utilities
+│
 ├── models/
-│   └── ml_model.py
+│   ├── __init__.py
+│   ├── base_model.py       # Abstract base class for models
+│   ├── ml_model.py         # Enhanced LSTM model implementation
+│   └── technical_model.py  # Technical analysis model
+│
 ├── strategies/
-│   └── ml_strategy.py
-├── backtesting/
-│   ├── backtester.py
-│   ├── position.py
-│   └── metrics.py
+│   ├── __init__.py
+│   ├── base_strategy.py    # Abstract base class for strategies
+│   ├── ml_strategy.py      # Hybrid ML-based strategy
+│   └── technical_strategy.py # Technical analysis strategy
+│
+├── utils/
+│   ├── __init__.py
+│   ├── metrics.py          # Performance metrics
+│   ├── risk_manager.py     # Risk management utilities
+│   ├── visualization.py    # Plotting and visualization
+│   └── validators.py       # Input validation utilities
+│
 ├── tests/
-│   ├── test_models.py
-│   ├── test_data.py
-│   ├── test_strategies.py
-│   ├── test_backtester.py
-│   └── test_config.py
+│   ├── __init__.py
+│   ├── test_data/         # Test data files
+│   ├── test_models.py     # Model tests
+│   ├── test_strategies.py # Strategy tests
+│   └── test_utils.py      # Utility tests
+│
 ├── logs/
-├── main.py
-└── requirements.txt
+│   ├── trading/           # Trading execution logs
+│   ├── training/          # Model training logs
+│   └── backtest/          # Backtest result logs
+│
+├── documentation/
+│   ├── ARCHITECTURE.md    # System architecture
+│   ├── Program_Flow.md    # Program execution flow
+│   ├── codebase_analysis.md # Code documentation
+│   ├── change_log.md      # Version history
+│   └── api/              # API documentation
+│
+├── notebooks/
+│   ├── analysis/         # Analysis notebooks
+│   ├── research/         # Research notebooks
+│   └── visualization/    # Visualization notebooks
+│
+├── requirements/
+│   ├── base.txt         # Base dependencies
+│   ├── dev.txt          # Development dependencies
+│   └── test.txt         # Testing dependencies
+│
+├── scripts/
+│   ├── setup.py         # Setup script
+│   ├── install.py       # Installation script
+│   └── run_tests.py     # Test runner
+│
+├── .gitignore
+├── LICENSE
+├── README.md
+├── requirements.txt
+└── main.py
 ```
 
 ## Contributing
