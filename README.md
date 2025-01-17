@@ -1,5 +1,7 @@
 # Trading Bot
 
+## In development
+
 A sophisticated machine learning-based trading bot that uses LSTM neural networks with attention mechanisms to predict stock price movements and execute trades.
 
 ## Features
